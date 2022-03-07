@@ -135,14 +135,15 @@ def update_model(self, Y_t, old_state, actions, weights=None):
     input[:, -1] = Y_t
     :return:
     '''
-    new_data = np.empty((old_state.size+2))
-    new_data[:-2] = old_state
-    new_data[-2] = ACTIONS.index(actions)
-    new_data[-1] = Y_t
+    new_data = np.empty((1, old_state.size+2))
+    print(new_data.shape, old_state.shape)
+    new_data[:, :-2] = old_state
+    new_data[0, -2] = ACTIONS.index(actions)
+    new_data[0, -1] = Y_t
     if not os.path.isfile("my-saved-model.pt"):  #
         krr = KernelRidge(alpha=1.0)
-        krr.fit(new_data[:-1].reshape(1, -1) , new_data[-1])
         self.model = krr
+        self.model.fit(new_data[:-1].T, new_data[-1])
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
         with open("my-saved-data.pt", "wb") as file:

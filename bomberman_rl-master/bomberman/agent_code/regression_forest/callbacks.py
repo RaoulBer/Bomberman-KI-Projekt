@@ -30,8 +30,8 @@ def setup(self):
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-        with open("saved_feature_reduction.pt", "rb") as file:
-            self.feature_red = pickle.load(file)
+        #with open("saved_feature_reduction.pt", "rb") as file:
+        #    self.feature_red = pickle.load(file)
 
 
 def act(self, game_state: dict) -> str:
@@ -56,7 +56,12 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     game_state_use = state_to_features(game_state)
     #feature_state = self.feature_red(game_state_use)
-    responses = self.model.predict(game_state_use)
+    data = np.empty((1, game_state_use.size + 1))
+    data[:, :-1] = game_state_use.T
+    responses = []
+    for i in range(6):
+        data[0, -1] = i
+        responses.append(self.model.predict(data))
     return ACTIONS[np.argmax(responses)]
 
 
@@ -85,10 +90,9 @@ def state_to_features(game_state: dict) -> np.array:
     # and return them as a vector
     return stacked_channels.reshape(-1)
     """
-    features = np.zeros(4+17*17, 1)
-    bombs_coins = np.zeros(17, 17)
-    players = np.zeros(17, 17)
-    channels = []
+    features = np.zeros((4+17*17, 1))
+    bombs_coins = np.zeros((17, 17))
+    players = np.zeros((17, 17))
     r = game_state["round"]
     s = game_state["step"]
     *_, (s0, s1) = game_state["self"]
