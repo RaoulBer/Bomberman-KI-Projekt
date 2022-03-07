@@ -1,6 +1,7 @@
 from collections import namedtuple, deque
 
 import pickle
+import random
 from typing import List
 
 import events as e
@@ -17,6 +18,7 @@ RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
 
+memory = []
 
 def setup_training(self):
     """
@@ -99,3 +101,11 @@ def reward_from_events(self, events: List[str]) -> int:
             reward_sum += game_rewards[event]
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
+
+def remember(self, state, action, next_state):
+    memory.append((state,))
+
+
+def replay(self, batch_size):
+
+    minibatch = random.sample()
