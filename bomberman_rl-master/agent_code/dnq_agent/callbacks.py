@@ -19,7 +19,7 @@ learning_rate = 0.001
 #factors determining explorative behaviour
 epsilon = 1.0
 epsilon_decay = 0.995
-epsilon_min = 0.01
+epsilon_min = 0.10
 
 #feature counting
 roundNum = 1
@@ -32,12 +32,12 @@ selfNum = 3 # bomb is possible plus x and y coordinate
 othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
 featureSum = roundNum + stepNum + fieldNum + bombsNum + explosion_mapNum + coinsNum + selfNum + othersNum
 
-def build_model(self):
+def build_model():
     model = Sequential()
-    model.add(Dense(24, input_dim=self.state_size, activation='relu'))
-    model.add(Dense(24,activation='relu'))
-    model.add(Dense(self.action_size, activation='linear'))
-    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate) )
+    model.add(Dense(featureSum, input_dim=featureSum, activation='relu'))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dense(action_size, activation='linear'))
+    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     return model
 
@@ -82,6 +82,40 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     return ACTIONS[np.argmax(self.model.predict(state_to_features(game_state)))]
 
+def parseBombs(game_state: dict) -> np.array:
+    bombVector = []
+    for bomb in game_state["bombs"]:
+        bombVector.append(bomb[0][0])
+        bombVector.append(bomb[0][1])
+        bombVector.append(bomb[1])
+
+    while len(bombVector) < bombsNum:
+        bombVector.append(0)
+
+    return np.array(bombVector)
+
+def parseCoins(game_state: dict) ->np.array:
+    coinVector = []
+    for coin in game_state["coins"]:
+        coinVector.append(coin[0])
+        coinVector.append(coin[1])
+
+    while len(coinVector) < coinsNum:
+        coinVector.append(0)
+
+    return np.array(coinVector)
+
+def parseOthers(game_state: dict) ->np.array:
+    otherVector = []
+    for other in game_state["others"]:
+        otherVector.append(other[2])
+        otherVector.append(other[3][0])
+        otherVector.append(other[3][1])
+
+    while len(otherVector) < othersNum:
+        otherVector.append(0)
+
+    return np.array(otherVector)
 
 def state_to_features(game_state: dict) -> np.array:
     """
@@ -109,13 +143,11 @@ def state_to_features(game_state: dict) -> np.array:
     temp += 1
     featurevector[temp:temp+fieldNum] = game_state["field"].reshape(-1)
     temp += fieldNum
-    featurevector[temp:temp+bombsNum] = np.array([[bomb[0][0], bomb[0][1], bomb[1]]
-                                                  for bomb in game_state["bombs"]]).reshape(-1)
+    featurevector[temp:temp+bombsNum] = parseBombs(game_state)
     temp += bombsNum
     featurevector[temp:temp+explosion_mapNum] = game_state["explosion_map"].reshape(-1)
     temp += explosion_mapNum
-    featurevector[temp:temp+coinsNum] = np.array([[coin[0],coin[1]]
-                                                  for coin in game_state["coins"]]).reshape(-1)
+    featurevector[temp:temp+coinsNum] = parseCoins(game_state)
     temp += coinsNum
     featurevector[temp] = game_state["self"][2]
     temp += 1
@@ -123,7 +155,6 @@ def state_to_features(game_state: dict) -> np.array:
     temp += 1
     featurevector[temp] = game_state["self"][3][1]
     temp += 1
-    featurevector[temp:temp+othersNum] = np.array([[other[2],other[3][0],other[3][1]]
-                                                   for other in game_state["others"]]).reshape(-1)
+    featurevector[temp:temp+othersNum] = parseOthers(game_state)
 
-    return featurevector
+    return np.array([featurevector])

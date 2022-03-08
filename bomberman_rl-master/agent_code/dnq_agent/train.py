@@ -1,12 +1,13 @@
 from collections import namedtuple, deque
 
 import pickle
+import numpy as np
 import random
 from typing import List
 import os
 
 import events as e
-from .callbacks import *
+import agent_code.dnq_agent.callbacks as callbacks
 
 # This is only an example!
 Transition = namedtuple('Transition',
@@ -23,7 +24,6 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 batch_size = TRANSITION_HISTORY_SIZE/10
 epochs_per_state = 1
 training_verbosity = 0
-
 
 def setup_training(self):
     """
@@ -63,11 +63,12 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     # Idea: Add your own events to hand out rewards
     #Leaving this out for now
-    if False:
-        events.append(PLACEHOLDER_EVENT)
+    #if False:
+     #   events.append(PLACEHOLDER_EVENT)
 
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state), reward_from_events(self, events)))
+    self.transitions.append(Transition(callbacks.state_to_features(old_game_state), self_action, callbacks.state_to_features(new_game_state), reward_from_events(self, events)))
+
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -84,19 +85,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
 
-    minibatch = random.sample(self.transitions[:-1], batch_size)
+    if len(self.transitions) < 2:
+        minibatch = self.transitions
+    else:
+        print("this one")
+        minibatch = random.sample(self.transitions, int(len(self.transitions)*0.3))
 
     for state, action, next_state, reward in minibatch:
-        target = reward + gamma * np.amax(self.model.predict(next_state))
-        target_f = self.model.predict(state)
-        target_f = target
+        print("start training")
+        target = np.array([reward + callbacks.gamma * np.amax(self.model.predict(next_state))])
+        if(state == None):
+            continue
+        self.model.fit(state, target, epochs=epochs_per_state, verbose=training_verbosity)
 
-        self.model.fit(state, target_f, epochs=epochs_per_state, verbose=training_verbosity)
-
-    if self.epsilon > self.epsilon_min:
-        self.epsilon *= self.epsilon_decay
+    if callbacks.epsilon > callbacks.epsilon_min:
+        callbacks.epsilon *= callbacks.epsilon_decay
 
 
     # Store the model
