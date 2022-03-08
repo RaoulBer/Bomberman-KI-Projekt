@@ -30,9 +30,7 @@ explosion_mapNum = fieldNum # same number of parameters
 coinsNum = 4
 selfNum = 3 # bomb is possible plus x and y coordinate
 othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
-
 featureSum = roundNum + stepNum + fieldNum + bombsNum + explosion_mapNum + coinsNum + selfNum + othersNum
-
 
 def build_model(self):
     model = Sequential()
@@ -64,7 +62,6 @@ def setup(self):
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-
 
 def act(self, game_state: dict) -> str:
     """
@@ -112,11 +109,13 @@ def state_to_features(game_state: dict) -> np.array:
     temp += 1
     featurevector[temp:temp+fieldNum] = game_state["field"].reshape(-1)
     temp += fieldNum
-    featurevector[temp:temp+bombsNum] = np.array([[bomb[0][0], bomb[0][1], bomb[1]] for bomb in game_state["bombs"]]).reshape(-1)
+    featurevector[temp:temp+bombsNum] = np.array([[bomb[0][0], bomb[0][1], bomb[1]]
+                                                  for bomb in game_state["bombs"]]).reshape(-1)
     temp += bombsNum
     featurevector[temp:temp+explosion_mapNum] = game_state["explosion_map"].reshape(-1)
     temp += explosion_mapNum
-    featurevector[temp:temp+coinsNum] = np.array([[coin[0],coin[1]] for coin in game_state["coins"]]).reshape(-1)
+    featurevector[temp:temp+coinsNum] = np.array([[coin[0],coin[1]]
+                                                  for coin in game_state["coins"]]).reshape(-1)
     temp += coinsNum
     featurevector[temp] = game_state["self"][2]
     temp += 1
@@ -124,6 +123,7 @@ def state_to_features(game_state: dict) -> np.array:
     temp += 1
     featurevector[temp] = game_state["self"][3][1]
     temp += 1
-    featurevector[temp:temp+othersNum] = np.array([[other[2],other[3][0],other[3][1]] for other in game_state["others"]]).reshape(-1)
+    featurevector[temp:temp+othersNum] = np.array([[other[2],other[3][0],other[3][1]]
+                                                   for other in game_state["others"]]).reshape(-1)
 
     return featurevector

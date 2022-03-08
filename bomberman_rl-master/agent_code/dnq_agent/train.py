@@ -3,22 +3,27 @@ from collections import namedtuple, deque
 import pickle
 import random
 from typing import List
+import os
 
 import events as e
-from .callbacks import state_to_features
+from .callbacks import *
 
 # This is only an example!
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 20  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 100000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
 
-memory = []
+#Training parameters
+batch_size = TRANSITION_HISTORY_SIZE/10
+epochs_per_state = 1
+training_verbosity = 0
+
 
 def setup_training(self):
     """
@@ -31,9 +36,13 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    if os.path.isfile("my-saved-model.pt"):
+        with open("my-saved-model.pt", "rb") as file:
+            self.model = pickle.load(file)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
+    #remember
     """
     Called once per step to allow intermediate rewards based on game events.
 
@@ -53,7 +62,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     # Idea: Add your own events to hand out rewards
-    if ...:
+    #Leaving this out for now
+    if False:
         events.append(PLACEHOLDER_EVENT)
 
     # state_to_features is defined in callbacks.py
@@ -75,6 +85,19 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     self.transitions.append(Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+
+    minibatch = random.sample(self.transitions[:-1], batch_size)
+
+    for state, action, next_state, reward in minibatch:
+        target = reward + gamma * np.amax(self.model.predict(next_state))
+        target_f = self.model.predict(state)
+        target_f = target
+
+        self.model.fit(state, target_f, epochs=epochs_per_state, verbose=training_verbosity)
+
+    if self.epsilon > self.epsilon_min:
+        self.epsilon *= self.epsilon_decay
+
 
     # Store the model
     with open("my-saved-model.pt", "wb") as file:
@@ -101,11 +124,3 @@ def reward_from_events(self, events: List[str]) -> int:
             reward_sum += game_rewards[event]
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
-
-def remember(self, state, action, next_state):
-    memory.append((state,))
-
-
-def replay(self, batch_size):
-
-    minibatch = random.sample()
