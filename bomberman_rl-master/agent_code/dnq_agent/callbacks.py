@@ -2,6 +2,7 @@ import os
 import pickle
 import random
 
+import keras.models
 import numpy as np
 import tensorflow as tf
 from keras.models import Sequential
@@ -55,13 +56,14 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("my-saved-model.pt"):
+    if self.train or not os.path.isfile("my-saved-model"):
         self.logger.info("Setting up model from scratch.")
         self.model = build_model()
     else:
         self.logger.info("Loading model from saved state.")
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
+        #with open("my-saved-model.pt", "rb") as file:
+            #self.model = pickle.load(file)
+        self.model = keras.models.load_model("my-saved-model")
 
 def act(self, game_state: dict) -> str:
     """

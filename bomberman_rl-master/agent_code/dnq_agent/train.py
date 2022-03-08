@@ -14,7 +14,7 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 100000  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
 # Events
@@ -36,10 +36,9 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-    if os.path.isfile("my-saved-model.pt"):
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
-
+    #if os.path.isfile("my-saved-model.pt"):
+        #with open("my-saved-model.pt", "rb") as file:
+            #self.model = pickle.load(file)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     #remember
@@ -67,9 +66,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
      #   events.append(PLACEHOLDER_EVENT)
 
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(callbacks.state_to_features(old_game_state), self_action, callbacks.state_to_features(new_game_state), reward_from_events(self, events)))
-
-
+    self.transitions.append(Transition(callbacks.state_to_features(old_game_state), self_action,
+                                       callbacks.state_to_features(new_game_state), reward_from_events(self, events)))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -85,29 +83,34 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    #self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action,
+    # None, reward_from_events(self, events)))
 
     if len(self.transitions) < 2:
         minibatch = self.transitions
+        print("hehe")
+        self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+
     else:
-        print("this one")
         minibatch = random.sample(self.transitions, int(len(self.transitions)*0.3))
+        self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
     for state, action, next_state, reward in minibatch:
         print("start training")
-        target = np.array([reward + callbacks.gamma * np.amax(self.model.predict(next_state))])
-        if(state == None):
+        target[action] = np.array([reward + callbacks.gamma * np.amax(self.model.predict(next_state))])
+        try:
+            self.model.fit(state, target, epochs=epochs_per_state, verbose=training_verbosity)
+        except ValueError:
+            print("Valeo")
             continue
-        self.model.fit(state, target, epochs=epochs_per_state, verbose=training_verbosity)
 
     if callbacks.epsilon > callbacks.epsilon_min:
         callbacks.epsilon *= callbacks.epsilon_decay
 
-
     # Store the model
-    with open("my-saved-model.pt", "wb") as file:
-        pickle.dump(self.model, file)
-
+    #with open("my-saved-model.pt", "wb") as file:
+        #pickle.dump(self.model, file)
+    self.model.save("my-saved-model")
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -117,6 +120,7 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
+        e.CRATE_DESTROYED: 1,
         e.COIN_COLLECTED: 2,
         e.KILLED_OPPONENT: 10,
         e.GOT_KILLED: -10,
