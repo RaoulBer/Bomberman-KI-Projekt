@@ -83,23 +83,31 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    #self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action,
-    # None, reward_from_events(self, events)))
+    self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action,
+                                       None, reward_from_events(self, events)))
 
-    if len(self.transitions) < 2:
+    if len(self.transitions) < 32:
         minibatch = self.transitions
         print("hehe")
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
     else:
-        minibatch = random.sample(self.transitions, int(len(self.transitions)*0.3))
+        minibatch = random.sample(self.transitions, 32)
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
     for state, action, next_state, reward in minibatch:
-        print("start training")
-        target[action] = np.array([reward + callbacks.gamma * np.amax(self.model.predict(next_state))])
+        if next_state is None:
+            try:
+                target = np.array(self.model.predict(callbacks.state_to_features(state)))
+                target[0][callbacks.ACTIONS.index(action)] = reward
+            except ValueError:
+                print("Here is a problem")
         try:
-            self.model.fit(state, target, epochs=epochs_per_state, verbose=training_verbosity)
+            target = np.array(self.model.predict(callbacks.state_to_features(state)))
+            print("sagen1")
+            target[0][callbacks.ACTIONS.index(action)] = reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state)))
+            print("sagen2")
+            self.model.fit(callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
         except ValueError:
             print("Valeo")
             continue
