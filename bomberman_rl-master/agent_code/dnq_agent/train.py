@@ -18,12 +18,14 @@ TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
 # Events
-WAITED = "PLACEHOLDER"
+PLACEHOLDER = "PLACEHOLDER"
 
 #Training parameters
 batch_size = TRANSITION_HISTORY_SIZE/10
 epochs_per_state = 1
 training_verbosity = 0
+
+ROUNDS = 0
 
 def setup_training(self):
     """
@@ -36,9 +38,6 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-    #if os.path.isfile("my-saved-model.pt"):
-        #with open("my-saved-model.pt", "rb") as file:
-            #self.model = pickle.load(file)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     #remember
@@ -62,8 +61,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     # Idea: Add your own events to hand out rewards
     #Leaving this out for now
-    if False:
-        events.append("WAITED")
+    #if False:
+     #   events.append("WAITED")
 
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_game_state, self_action,
@@ -86,37 +85,39 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(Transition(last_game_state, last_action,
                                        None, reward_from_events(self, events)))
 
-    if len(self.transitions) < 128:
+    if len(self.transitions) < 16:
         minibatch = self.transitions
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     else:
-        minibatch = random.sample(self.transitions, 128)
+        minibatch = random.sample(self.transitions, 16)
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
-    for state, action, next_state, reward in minibatch:
-        if state is None:
-            continue
+        for idx, (state, action, next_state, reward) in enumerate(minibatch):
+            if state is None:
+                continue
 
-        if next_state is None:
-            try:
-                target = np.array(self.model.predict(callbacks.state_to_features(state)))
-                target[0][callbacks.ACTIONS.index(action)] = reward
-            except ValueError:
-                print("Here is a problem")
-        else:
-            try:
-                target = np.array(self.model.predict(callbacks.state_to_features(state)))
-                target[0][callbacks.ACTIONS.index(action)] = reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state)))
-                self.model.fit(callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
-            except ValueError:
-                print("Valeo")
-                #continue
+            if next_state is None:
+                try:
+                    target = np.array(self.model.predict(callbacks.state_to_features(state)))
+                    target[0][callbacks.ACTIONS.index(action)] = reward
+                except ValueError:
+                    print("Here is a problem")
+            else:
+                try:
+                    target = np.array(self.model.predict(callbacks.state_to_features(state)))
+                    target[0][callbacks.ACTIONS.index(action)] = \
+                        reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state))[0])
+                    self.model.fit(
+                        callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
+                except ValueError:
+                    print("Valeo")
+                    #continue
 
-    if callbacks.epsilon > callbacks.epsilon_min:
-        callbacks.epsilon *= callbacks.epsilon_decay
+        if callbacks.epsilon > callbacks.epsilon_min:
+            callbacks.epsilon *= callbacks.epsilon_decay
+            print(callbacks.epsilon)
 
-    # Store the model
-    self.model.save("my-saved-model")
+        self.model.save("my-saved-model")
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -126,12 +127,13 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.CRATE_DESTROYED: 10,
-        e.COIN_COLLECTED: 50,
-        e.KILLED_OPPONENT: 200,
-        e.GOT_KILLED: -40,
-        e.KILLED_SELF: -60,
-        WAITED: -5  # idea: the custom event is bad
+        e.CRATE_DESTROYED: 2,
+        e.COIN_COLLECTED: 5,
+        e.KILLED_OPPONENT: 10,
+        e.GOT_KILLED: -5,
+        e.KILLED_SELF: -10,
+        e.WAITED: -1,
+        e.INVALID_ACTION: -1 # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
