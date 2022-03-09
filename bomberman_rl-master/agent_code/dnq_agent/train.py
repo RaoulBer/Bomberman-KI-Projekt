@@ -18,7 +18,7 @@ TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
 # Events
-PLACEHOLDER_EVENT = "PLACEHOLDER"
+WAITED = "PLACEHOLDER"
 
 #Training parameters
 batch_size = TRANSITION_HISTORY_SIZE/10
@@ -62,12 +62,12 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     # Idea: Add your own events to hand out rewards
     #Leaving this out for now
-    #if False:
-     #   events.append(PLACEHOLDER_EVENT)
+    if False:
+        events.append("WAITED")
 
     # state_to_features is defined in callbacks.py
-    self.transitions.append(Transition(callbacks.state_to_features(old_game_state), self_action,
-                                       callbacks.state_to_features(new_game_state), reward_from_events(self, events)))
+    self.transitions.append(Transition(old_game_state, self_action,
+                                       new_game_state, reward_from_events(self, events)))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -83,41 +83,39 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    self.transitions.append(Transition(callbacks.state_to_features(last_game_state), last_action,
+    self.transitions.append(Transition(last_game_state, last_action,
                                        None, reward_from_events(self, events)))
 
-    if len(self.transitions) < 32:
+    if len(self.transitions) < 128:
         minibatch = self.transitions
-        print("hehe")
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-
     else:
-        minibatch = random.sample(self.transitions, 32)
+        minibatch = random.sample(self.transitions, 128)
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
     for state, action, next_state, reward in minibatch:
+        if state is None:
+            continue
+
         if next_state is None:
             try:
                 target = np.array(self.model.predict(callbacks.state_to_features(state)))
                 target[0][callbacks.ACTIONS.index(action)] = reward
             except ValueError:
                 print("Here is a problem")
-        try:
-            target = np.array(self.model.predict(callbacks.state_to_features(state)))
-            print("sagen1")
-            target[0][callbacks.ACTIONS.index(action)] = reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state)))
-            print("sagen2")
-            self.model.fit(callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
-        except ValueError:
-            print("Valeo")
-            continue
+        else:
+            try:
+                target = np.array(self.model.predict(callbacks.state_to_features(state)))
+                target[0][callbacks.ACTIONS.index(action)] = reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state)))
+                self.model.fit(callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
+            except ValueError:
+                print("Valeo")
+                #continue
 
     if callbacks.epsilon > callbacks.epsilon_min:
         callbacks.epsilon *= callbacks.epsilon_decay
 
     # Store the model
-    #with open("my-saved-model.pt", "wb") as file:
-        #pickle.dump(self.model, file)
     self.model.save("my-saved-model")
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -128,12 +126,12 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.CRATE_DESTROYED: 1,
-        e.COIN_COLLECTED: 2,
-        e.KILLED_OPPONENT: 10,
-        e.GOT_KILLED: -10,
-        e.KILLED_SELF: -10,
-        PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
+        e.CRATE_DESTROYED: 10,
+        e.COIN_COLLECTED: 50,
+        e.KILLED_OPPONENT: 200,
+        e.GOT_KILLED: -40,
+        e.KILLED_SELF: -60,
+        WAITED: -5  # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:

@@ -95,8 +95,11 @@ def parseRound(game_state: dict) -> int:
     try:
         return game_state["round"]
     except ValueError:
-        print("Value erroer in parser")
+        print("Value error in Round parser")
         return 0
+
+    except IndexError:
+        print("Index error in Round parser")
 
 
 def parseStep(game_state: dict) -> int:
