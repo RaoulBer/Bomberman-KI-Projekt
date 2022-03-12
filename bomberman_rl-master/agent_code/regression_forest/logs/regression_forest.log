@@ -1,27 +1,121 @@
-2022-03-12 11:32:03,921 [regression_forest_code] INFO: Loading model from saved state.
-2022-03-12 11:32:04,324 [regression_forest_code] DEBUG: Querying model for action.
-2022-03-12 11:32:04,330 [regression_forest_code] DEBUG: Encountered game event(s) 'BOMB_DROPPED' in step 1
-2022-03-12 11:32:04,393 [regression_forest_code] DEBUG: Querying model for action.
-2022-03-12 11:32:04,395 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 2
-2022-03-12 11:32:04,395 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
-2022-03-12 11:32:04,494 [regression_forest_code] DEBUG: Querying model for action.
-2022-03-12 11:32:04,498 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 3
-2022-03-12 11:32:04,498 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
-2022-03-12 11:32:04,595 [regression_forest_code] DEBUG: Querying model for action.
-2022-03-12 11:32:04,598 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 4
-2022-03-12 11:32:04,598 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
-2022-03-12 11:32:04,697 [regression_forest_code] DEBUG: Querying model for action.
-2022-03-12 11:32:04,699 [regression_forest_code] DEBUG: Encountered event(s) 'INVALID_ACTION', 'BOMB_EXPLODED', 'KILLED_SELF', 'GOT_KILLED' in final step
-2022-03-12 11:32:04,700 [regression_forest_code] INFO: Awarded -20 for events INVALID_ACTION, BOMB_EXPLODED, KILLED_SELF, GOT_KILLED
-2022-03-12 11:32:04,705 [regression_forest_code] INFO: Trained with a data-set of this size: (128, 873)
-2022-03-12 11:32:04,705 [regression_forest_wrapper] ERROR: Input contains NaN, infinity or a value too large for dtype('float64').
+2022-03-12 14:10:00,411 [regression_forest_code] INFO: Setting up model from scratch.
+2022-03-12 14:10:00,824 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:00,824 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 1
+2022-03-12 14:10:00,889 [regression_forest_code] DEBUG: Encountered game event(s) 'BOMB_DROPPED' in step 2
+2022-03-12 14:10:00,889 [regression_forest_code] INFO: Awarded 0 for events BOMB_DROPPED, PLACEHOLDER
+2022-03-12 14:10:00,992 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 3
+2022-03-12 14:10:00,992 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:01,096 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 4
+2022-03-12 14:10:01,097 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:01,196 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 5
+2022-03-12 14:10:01,196 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:01,300 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_UP', 'BOMB_EXPLODED' in step 6
+2022-03-12 14:10:01,300 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_UP, BOMB_EXPLODED, PLACEHOLDER
+2022-03-12 14:10:01,400 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 7
+2022-03-12 14:10:01,400 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:01,501 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 8
+2022-03-12 14:10:01,501 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:01,601 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 9
+2022-03-12 14:10:01,602 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:01,703 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 10
+2022-03-12 14:10:01,703 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:01,803 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 11
+2022-03-12 14:10:01,803 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:01,904 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:01,905 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 12
+2022-03-12 14:10:01,905 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:02,006 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 13
+2022-03-12 14:10:02,006 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:02,106 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_UP' in step 14
+2022-03-12 14:10:02,106 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_UP, PLACEHOLDER
+2022-03-12 14:10:02,206 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 15
+2022-03-12 14:10:02,207 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:02,309 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 16
+2022-03-12 14:10:02,309 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:02,410 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 17
+2022-03-12 14:10:02,410 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:02,511 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_LEFT' in step 18
+2022-03-12 14:10:02,511 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_LEFT, PLACEHOLDER
+2022-03-12 14:10:02,612 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_LEFT' in step 19
+2022-03-12 14:10:02,612 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_LEFT, PLACEHOLDER
+2022-03-12 14:10:02,713 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_LEFT', 'COIN_COLLECTED' in step 20
+2022-03-12 14:10:02,713 [regression_forest_code] INFO: Awarded 6.5 for events MOVED_LEFT, COIN_COLLECTED, PLACEHOLDER
+2022-03-12 14:10:02,814 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 21
+2022-03-12 14:10:02,814 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:02,914 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 22
+2022-03-12 14:10:02,915 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:03,016 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:03,017 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 23
+2022-03-12 14:10:03,017 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:03,117 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_LEFT' in step 24
+2022-03-12 14:10:03,117 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_LEFT, PLACEHOLDER
+2022-03-12 14:10:03,218 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 25
+2022-03-12 14:10:03,218 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:03,319 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 26
+2022-03-12 14:10:03,319 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:03,420 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 27
+2022-03-12 14:10:03,420 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:03,521 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_LEFT' in step 28
+2022-03-12 14:10:03,521 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_LEFT, PLACEHOLDER
+2022-03-12 14:10:03,622 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 29
+2022-03-12 14:10:03,622 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:03,723 [regression_forest_code] DEBUG: Encountered game event(s) 'MOVED_RIGHT' in step 30
+2022-03-12 14:10:03,723 [regression_forest_code] INFO: Awarded 1.5 for events MOVED_RIGHT, PLACEHOLDER
+2022-03-12 14:10:03,824 [regression_forest_code] DEBUG: Encountered game event(s) 'BOMB_DROPPED' in step 31
+2022-03-12 14:10:03,824 [regression_forest_code] INFO: Awarded 0 for events BOMB_DROPPED, PLACEHOLDER
+2022-03-12 14:10:03,925 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 32
+2022-03-12 14:10:03,925 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:04,026 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 33
+2022-03-12 14:10:04,026 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:04,127 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 34
+2022-03-12 14:10:04,127 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:04,229 [regression_forest_code] DEBUG: Encountered event(s) 'INVALID_ACTION', 'BOMB_EXPLODED', 'KILLED_SELF', 'GOT_KILLED' in final step
+2022-03-12 14:10:04,229 [regression_forest_code] INFO: Awarded -20 for events INVALID_ACTION, BOMB_EXPLODED, KILLED_SELF, GOT_KILLED
+2022-03-12 14:10:04,231 [regression_forest_code] INFO: Trained with a data-set of this size: (20, 873)
+2022-03-12 14:10:04,330 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:04,330 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION', 'COIN_COLLECTED' in step 1
+2022-03-12 14:10:04,430 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:04,431 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 2
+2022-03-12 14:10:04,431 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:04,530 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:04,533 [regression_forest_code] DEBUG: Encountered game event(s) 'BOMB_DROPPED' in step 3
+2022-03-12 14:10:04,533 [regression_forest_code] INFO: Awarded 0 for events BOMB_DROPPED, PLACEHOLDER
+2022-03-12 14:10:04,626 [regression_forest_code] DEBUG: Choosing action purely at random.
+2022-03-12 14:10:04,626 [regression_forest_code] DEBUG: Encountered game event(s) 'WAITED' in step 4
+2022-03-12 14:10:04,626 [regression_forest_code] INFO: Awarded -1 for events WAITED, PLACEHOLDER
+2022-03-12 14:10:04,727 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:04,729 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 5
+2022-03-12 14:10:04,729 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:04,828 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:04,830 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 6
+2022-03-12 14:10:04,830 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:04,929 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:04,930 [regression_forest_code] DEBUG: Encountered event(s) 'INVALID_ACTION', 'BOMB_EXPLODED', 'KILLED_SELF', 'GOT_KILLED' in final step
+2022-03-12 14:10:04,930 [regression_forest_code] INFO: Awarded -20 for events INVALID_ACTION, BOMB_EXPLODED, KILLED_SELF, GOT_KILLED
+2022-03-12 14:10:04,932 [regression_forest_code] INFO: Trained with a data-set of this size: (26, 873)
+2022-03-12 14:10:05,031 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:05,032 [regression_forest_code] DEBUG: Encountered game event(s) 'BOMB_DROPPED', 'COIN_COLLECTED' in step 1
+2022-03-12 14:10:05,131 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:05,133 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 2
+2022-03-12 14:10:05,133 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:05,232 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:05,233 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 3
+2022-03-12 14:10:05,233 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:05,333 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:05,334 [regression_forest_code] DEBUG: Encountered game event(s) 'INVALID_ACTION' in step 4
+2022-03-12 14:10:05,334 [regression_forest_code] INFO: Awarded -2 for events INVALID_ACTION, PLACEHOLDER
+2022-03-12 14:10:05,434 [regression_forest_code] DEBUG: Querying model for action.
+2022-03-12 14:10:05,435 [regression_forest_code] DEBUG: Encountered event(s) 'INVALID_ACTION', 'BOMB_EXPLODED', 'KILLED_SELF', 'GOT_KILLED' in final step
+2022-03-12 14:10:05,435 [regression_forest_code] INFO: Awarded -20 for events INVALID_ACTION, BOMB_EXPLODED, KILLED_SELF, GOT_KILLED
+2022-03-12 14:10:05,437 [regression_forest_code] INFO: Trained with a data-set of this size: (30, 873)
+2022-03-12 14:10:05,437 [regression_forest_wrapper] ERROR: Input contains NaN, infinity or a value too large for dtype('float64').
 Traceback (most recent call last):
   File "/Users/konradgoldenbaum/Documents/FML Homework/Bomberman-KI-Projekt/bomberman_rl-master/agents.py", line 248, in process_event
     event_result = getattr(module, event_name)(self.fake_self, *event_args)
-  File "/Users/konradgoldenbaum/Documents/FML Homework/Bomberman-KI-Projekt/bomberman_rl-master/agent_code/regression_forest/train.py", line 118, in end_of_round
-    update_model(self, input=new_data, weights=None) #probably inefficient
-  File "/Users/konradgoldenbaum/Documents/FML Homework/Bomberman-KI-Projekt/bomberman_rl-master/agent_code/regression_forest/train.py", line 191, in update_model
-    self.model.fit(minibatch[:, :-1], minibatch[:, -1])
+  File "/Users/konradgoldenbaum/Documents/FML Homework/Bomberman-KI-Projekt/bomberman_rl-master/agent_code/regression_forest/train.py", line 89, in end_of_round
+    update_model(self)
+  File "/Users/konradgoldenbaum/Documents/FML Homework/Bomberman-KI-Projekt/bomberman_rl-master/agent_code/regression_forest/train.py", line 134, in update_model
+    self.model.fit(data_set[:, :-1], data_set[:, -1])
   File "/opt/homebrew/Caskroom/miniforge/base/envs/ml_homework/lib/python3.9/site-packages/sklearn/kernel_ridge.py", line 191, in fit
     X, y = self._validate_data(
   File "/opt/homebrew/Caskroom/miniforge/base/envs/ml_homework/lib/python3.9/site-packages/sklearn/base.py", line 576, in _validate_data
