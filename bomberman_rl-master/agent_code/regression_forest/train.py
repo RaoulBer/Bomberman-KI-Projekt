@@ -57,15 +57,18 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         events.append(PLACEHOLDER_EVENT)
 
     # state_to_features is defined in callbacks.py
-    if old_game_state is not None:
+    if old_game_state is not None and new_game_state is not None:
         self.transitions.append(
             Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state),
                        reward_from_events(self, events)))
-    if new_game_state["step"] + 1 % 4 == 0:
+    if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
         # todo update/write new model here :)
         for transition in self.transitions:
             if type(self.model) != type(np.empty(1)):
-                val = np.max(self.model.predict(transition[2]))
+                data = np.empty((1, transition[2].size + 1))
+                data[:, :-1] = transition[2]
+                data[0, -1] = ACTIONS.index(self_action)
+                val = np.max(self.model.predict(data))
             else:
                 val = 1
             Y_t = transition[3] + LEARN_RATE * val
@@ -89,15 +92,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     # Store the model
     # todo update/write new model here :)
     for transition in self.transitions:
+        if transition[2] is None: continue
         if type(self.model) != type(np.empty(1)):
-            val = np.max(self.model.predict(transition[2]))
-            Y_t = transition[3] + LEARN_RATE * val
-        elif transition[2] is None:
-            Y_t = transition[3]
+            #print(transition[2].shape)
+            data = np.empty((1, transition[2].size + 1))
+            data[:, :-1] = transition[2]
+            responses = []
+            for i in range(6):
+                data[0, -1] = i
+                responses.append(self.model.predict(data))
+            val = np.max(responses)
         else:
             val = 1
-            Y_t = transition[3] + LEARN_RATE * val
-        update_model(self, Y_t=Y_t, old_state=transition[0], actions=transition[1], weights=None)
+        Y_t = transition[-1] + LEARN_RATE * val
+        update_model(self, Y_t=Y_t, old_state=transition[0], action=transition[1], weights=None) #probably inefficient
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -107,11 +115,18 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 1,
+        e.COIN_COLLECTED: 5,
         e.KILLED_OPPONENT: 5,
         e.GOT_KILLED: -10,
         e.KILLED_SELF: -8,
-        PLACEHOLDER_EVENT: -.1  # idea: the custom event is bad
+        e.WAITED: -1,
+        e.CRATE_DESTROYED: 3,
+        e.INVALID_ACTION: -2,
+        e.MOVED_LEFT: 1.5,
+        e.MOVED_RIGHT: 1.5,
+        e.MOVED_UP: 1.5,
+        e.MOVED_DOWN: 1.5
+        # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
@@ -121,7 +136,7 @@ def reward_from_events(self, events: List[str]) -> int:
     return reward_sum
 
 
-def update_model(self, Y_t, old_state, actions, weights=None):
+def update_model(self, Y_t, old_state, action, weights=None):
     '''
     :param self:
     :param Y_t:
@@ -136,14 +151,16 @@ def update_model(self, Y_t, old_state, actions, weights=None):
     :return:
     '''
     new_data = np.empty((1, old_state.size+2))
-    print(new_data.shape, old_state.shape)
     new_data[:, :-2] = old_state
-    new_data[0, -2] = ACTIONS.index(actions)
+    new_data[0, -2] = ACTIONS.index(action)
     new_data[0, -1] = Y_t
     if not os.path.isfile("my-saved-model.pt"):  #
         krr = KernelRidge(alpha=1.0)
         self.model = krr
-        self.model.fit(new_data[:-1].T, new_data[-1])
+
+        d = new_data[:,:-1]
+        print(d.shape)
+        self.model.fit(X=d, y=new_data[:,-1])
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
         with open("my-saved-data.pt", "wb") as file:
@@ -152,9 +169,15 @@ def update_model(self, Y_t, old_state, actions, weights=None):
     else:
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
+        if not os.path.isfile("my-saved-data.pt"):  #
+            d = new_data[:, :-1]
+            print(d.shape)
+            with open("my-saved-data.pt", "wb") as file:
+                pickle.dump(new_data, file)
         with open("my-saved-data.pt", "rb") as file:
             data_set = pickle.load(file)
         data_set = np.concatenate((data_set, new_data))
+        self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
         self.model.fit(data_set[:, :-1], data_set[:, -1])
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
