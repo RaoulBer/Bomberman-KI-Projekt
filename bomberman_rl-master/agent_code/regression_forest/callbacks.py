@@ -57,7 +57,11 @@ def act(self, game_state: dict) -> str:
     game_state_use = state_to_features(game_state)
     #feature_state = self.feature_red(game_state_use)
     data = np.empty((1, game_state_use.size + 1))
+<<<<<<< HEAD
     data[:, :-1] = game_state_use
+=======
+    data[:, :-1] = game_state_use.T
+>>>>>>> origin/main
     responses = []
     for i in range(6):
         data[0, -1] = i
@@ -115,5 +119,9 @@ def state_to_features(game_state: dict) -> np.array:
 
     bombs_coins = bombs_coins.reshape(17*17, 1)
     players = players.reshape(17*17, 1)
+<<<<<<< HEAD
     return np.concatenate((features, players, bombs_coins), axis=0).T
+=======
+    return np.concatenate((features, players, bombs_coins), axis=0)
+>>>>>>> origin/main
 

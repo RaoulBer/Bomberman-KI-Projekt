@@ -25,7 +25,9 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 def setup_training(self):
     """
     Initialise self for training purpose.
+
     This is called after `setup` in callbacks.py.
+
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     # Example: Setup an array that will note transition tuples
@@ -39,11 +41,14 @@ def setup_training(self):
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     """
     Called once per step to allow intermediate rewards based on game events.
+
     When this method is called, self.events will contain a list of all game
     events relevant to your agent that occurred during the previous step. Consult
     settings.py to see what events are tracked. You can hand out rewards to your
     agent based on these events and your knowledge of the (new) game state.
+
     This is *one* of the places where you could update your agent.
+
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     :param old_game_state: The state that was passed to the last call of `act`.
     :param self_action: The action that you took.
@@ -76,10 +81,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     Called at the end of each game or when the agent died to hand out final rewards.
     This replaces game_events_occurred in this round.
+
     This is similar to game_events_occurred. self.events will contain all events that
     occurred during your agent's final step.
+
     This is *one* of the places where you could update your agent.
     This is also a good place to store an agent that you updated.
+
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
@@ -103,6 +111,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 def reward_from_events(self, events: List[str]) -> int:
     """
     *This is not a required function, but an idea to structure your code.*
+
     Here you can modify the rewards your agent get so as to en/discourage
     certain behavior.
     """
@@ -135,15 +144,14 @@ def update_model(self, Y_t, old_state, actions, weights=None):
     input[:, -1] = Y_t
     :return:
     '''
-    new_data = np.empty((1, old_state.size+2))
-    print(new_data.shape, old_state.shape)
-    new_data[:, :-2] = old_state
-    new_data[0, -2] = ACTIONS.index(actions)
-    new_data[0, -1] = Y_t
+    new_data = np.empty((old_state.size+2))
+    new_data[:-2] = old_state
+    new_data[-2] = ACTIONS.index(actions)
+    new_data[-1] = Y_t
     if not os.path.isfile("my-saved-model.pt"):  #
         krr = KernelRidge(alpha=1.0)
+        krr.fit(new_data[:-1].reshape(1, -1) , new_data[-1])
         self.model = krr
-        self.model.fit(new_data[:-1].T, new_data[-1])
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
         with open("my-saved-data.pt", "wb") as file:
@@ -168,11 +176,14 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import VotingRegressor
+
 # Loading some example data
 X, y = load_diabetes(return_X_y=True)
+
 # Training classifiers
 reg1 = GradientBoostingRegressor(random_state=1)
 reg2 = RandomForestRegressor(random_state=1)
 reg3 = LinearRegression()
 ereg = VotingRegressor(estimators=[('gb', reg1), ('rf', reg2), ('lr', reg3)])
-ereg = ereg.fit(X, y) '''
+ereg = ereg.fit(X, y)
+'''

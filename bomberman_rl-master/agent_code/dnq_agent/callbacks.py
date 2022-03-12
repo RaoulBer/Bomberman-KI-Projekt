@@ -16,7 +16,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.95
-learning_rate = 0.001
+learning_rate = 0.0001
 
 
 #factors determining explorative behaviour
@@ -31,16 +31,15 @@ stepNum = 1
 fieldNum = settings.ROWS * settings.COLS
 bombsNum = 3 * 4  # ((x,y)t) * number of max. active bombs
 explosion_mapNum = fieldNum # same number of parameters
-coinsNum = 4
+coinsNum = 100
 selfNum = 3 # bomb is possible plus x and y coordinate
 othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
-featureSum = roundNum + stepNum + fieldNum + bombsNum + explosion_mapNum + coinsNum + selfNum + othersNum
+featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 
 
 def build_model():
     model = Sequential()
     model.add(Dense(featureSum, input_dim=featureSum, activation='relu'))
-    model.add(Dense(64, activation='relu'))
     model.add(Dense(action_size, activation='linear'))
     model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
@@ -90,18 +89,6 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     return ACTIONS[np.argmax(self.model.predict(state_to_features(game_state)))]
 
-
-def parseRound(game_state: dict) -> int:
-    try:
-        return game_state["round"]
-    except ValueError:
-        print("Value error in Round parser")
-        return 0
-
-    except IndexError:
-        print("Index error in Round parser")
-
-
 def parseStep(game_state: dict) -> int:
     try:
         return game_state["step"]
@@ -119,6 +106,13 @@ def parseField(game_state: dict) -> np.array:
 def parseExplosionMap(game_state: dict) -> np.array:
     try:
         return game_state["explosion_map"].reshape(-1)
+    except ValueError:
+        return np.zeros(explosion_mapNum)
+
+
+def parseCombinedFieldExplosionMap(game_state: dict) -> np.array:
+    try:
+        return parseField(game_state) - 2 * parseExplosionMap(game_state)
     except ValueError:
         return np.zeros(explosion_mapNum)
 
@@ -201,16 +195,10 @@ def state_to_features(game_state: dict) -> np.array:
 
     featurevector = np.zeros(featureSum)
     temp = 0
-    featurevector[temp] = game_state["round"] #parseRound(game_state)
-    temp += 1
-    featurevector[int(temp)] = parseStep(game_state)
-    temp += 1
-    featurevector[temp:temp+fieldNum] = parseField(game_state)
+    featurevector[temp:temp+fieldNum] = parseCombinedFieldExplosionMap(game_state)
     temp += fieldNum
     featurevector[temp:temp+bombsNum] = parseBombs(game_state)
     temp += bombsNum
-    featurevector[temp:temp+explosion_mapNum] = parseExplosionMap(game_state)
-    temp += explosion_mapNum
     featurevector[temp:temp+coinsNum] = parseCoins(game_state)
     temp += coinsNum
     featurevector[temp:temp+3] = parseSelf(game_state)
