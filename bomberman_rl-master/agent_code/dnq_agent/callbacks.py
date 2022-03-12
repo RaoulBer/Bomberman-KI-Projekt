@@ -1,22 +1,16 @@
 import os
 import pickle
 import random
-
-import tensorflow.keras.models
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+
+import torch as T
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
 import settings
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-
-
-#model parameters
-action_size = len(ACTIONS)
-gamma = 0.95
-learning_rate = 0.0001
 
 
 #factors determining explorative behaviour
@@ -31,19 +25,48 @@ stepNum = 1
 fieldNum = settings.ROWS * settings.COLS
 bombsNum = 3 * 4  # ((x,y)t) * number of max. active bombs
 explosion_mapNum = fieldNum # same number of parameters
-coinsNum = 100
+coinsNum = 18 # 9 * 2 coordinates
 selfNum = 3 # bomb is possible plus x and y coordinate
 othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
 featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 
 
-def build_model():
-    model = Sequential()
-    model.add(Dense(featureSum, input_dim=featureSum, activation='relu'))
-    model.add(Dense(action_size, activation='linear'))
-    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
+#model parameters
+action_size = len(ACTIONS)
+gamma = 0.90
+learning_rate = 0.0001
+fc1Dim = featureSum
+fc2Dim = 256
 
-    return model
+
+class Model(nn.Module):
+    def __init__(self, lr, input_dims, fc1_dims, fc2_dims,
+                 n_actions):
+        super(Model, self).__init__()
+        self.input_dims = input_dims
+        self.fc1_dims = fc1_dims
+        self.fc2_dims = fc2_dims
+        self.n_actions = n_actions
+        self.fc1 = nn.Linear(self.input_dims, self.fc1_dims)
+        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
+        self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
+
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.loss = nn.MSELoss()
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        actions = self.fc3(x)
+
+        return actions
+
+
+def build_model(lr = learning_rate, inputDim=featureSum, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
+                n_actions=len(ACTIONS)):
+    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
 
 
 def setup(self):
@@ -60,14 +83,22 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("my-saved-model"):
+    if self.train and not os.path.isfile(
+            "agent_code//dnq_agent//model.pt"):
         self.logger.info("Setting up model from scratch.")
+        print("Setting up model from scratch.")
         self.model = build_model()
+
+    elif self.train and os.path.isfile("agent_code//dnq_agent//model.pt"):
+        print("Loading model from saved state.")
+        self.model = T.load("model.pt")
+
+
     else:
         self.logger.info("Loading model from saved state.")
-        #with open("my-saved-model.pt", "rb") as file:
-            #self.model = pickle.load(file)
-        self.model = tensorflow.keras.models.load_model("my-saved-model")
+        print("Loading model from saved state.")
+        self.model = T.load(
+            "model.pt")
 
 
 def act(self, game_state: dict) -> str:
@@ -87,7 +118,7 @@ def act(self, game_state: dict) -> str:
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
 
     self.logger.debug("Querying model for action.")
-    return ACTIONS[np.argmax(self.model.predict(state_to_features(game_state)))]
+    return ACTIONS[T.argmax(self.model.forward(state_to_features(game_state)))]
 
 def parseStep(game_state: dict) -> int:
     try:
@@ -205,4 +236,4 @@ def state_to_features(game_state: dict) -> np.array:
     temp += 3
     featurevector[temp:temp+othersNum] = parseOthers(game_state)
 
-    return np.array([featurevector])
+    return T.tensor(featurevector).float()
