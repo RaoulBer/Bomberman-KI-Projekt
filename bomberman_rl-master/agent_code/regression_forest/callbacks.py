@@ -57,7 +57,7 @@ def act(self, game_state: dict) -> str:
     game_state_use = state_to_features(game_state)
     #feature_state = self.feature_red(game_state_use)
     data = np.empty((1, game_state_use.size + 1))
-    data[:, :-1] = game_state_use.T
+    data[:, :-1] = game_state_use
     responses = []
     for i in range(6):
         data[0, -1] = i
@@ -93,11 +93,9 @@ def state_to_features(game_state: dict) -> np.array:
     features = np.zeros((4+17*17, 1))
     bombs_coins = np.zeros((17, 17))
     players = np.zeros((17, 17))
-    r = game_state["round"]
-    s = game_state["step"]
     *_, (s0, s1) = game_state["self"]
-    features[0] = r
-    features[1] = s
+    features[0] = game_state["round"]
+    features[1] = game_state["step"]
     features[2] = s0
     features[3] = s1
     features[4:, 0] = game_state["field"].flatten() - 3 * game_state["explosion_map"].flatten()
@@ -106,8 +104,10 @@ def state_to_features(game_state: dict) -> np.array:
     for bomb in b:
         bombs_coins[bomb[0]] = -5 * bomb[1]
     for other in others:
-        if other[2]: players[other[-1]] = 10
-        else: players[other[-1]] = other[1]
+        if other[2]:
+            players[other[-1]] = 10
+        else:
+            players[other[-1]] = other[1]
 
     c = game_state["coins"]
     for coin in c:
@@ -115,5 +115,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     bombs_coins = bombs_coins.reshape(17*17, 1)
     players = players.reshape(17*17, 1)
-    return np.concatenate((features, players, bombs_coins), axis=0)
+    out = np.concatenate((features, players, bombs_coins), axis=0).T
+    assert out.shape[0] == 1
+    return out
 

@@ -7,7 +7,7 @@ from typing import List
 import os
 
 import events as e
-import agent_code.dnq_agent.callbacks as callbacks
+import callbacks as callbacks
 
 import torch as T
 
