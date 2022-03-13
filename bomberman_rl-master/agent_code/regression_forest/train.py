@@ -129,18 +129,16 @@ def update_model(self, weights=None):
         data_set = pickle.load(file)
     if not os.path.isfile("my-saved-model.pt"):  #
         self.model = RandomForestRegressor(max_depth=100, random_state=0)
+        with open("my-saved-model.pt", "wb") as file:
+            pickle.dump(self.model, file)
     else:
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
     if data_set.shape[0] >=800:
         data_set = data_set[np.random.choice(data_set.shape[0], 800), :]
-        krr = KernelRidge(alpha=1.0)
-        self.model = krr
     else:
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
-    if data_set.shape[0] >=160:
-        data_set = data_set[np.random.choice(data_set.shape[0], 160), :]
     self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
     self.model.fit(data_set[:, :-1], data_set[:, -1])
     with open("my-saved-model.pt", "wb") as file:
@@ -151,7 +149,7 @@ def transition_list_to_data(self, Ys):
     length = len(self.transitions)
     assert len(Ys) == length
     array = np.empty((length, self.transitions[1][0].size + 2))
-    array[:,-1] = Ys
+    array[:, -1] = Ys
     for i, transition in enumerate(self.transitions):
         if transition[1] is None or transition[0] is None:
             continue
@@ -167,43 +165,6 @@ def transition_list_to_data(self, Ys):
         data_set = np.concatenate((data_set, array))
         with open("my-saved-data.pt", "wb") as file:
             pickle.dump(data_set, file)
-    return array
-
-
-''' For later perhaps?
-from sklearn.datasets import load_diabetes
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import VotingRegressor
-# Loading some example data
-X, y = load_diabetes(return_X_y=True)
-# Training classifiers
-reg1 = GradientBoostingRegressor(random_state=1)
-reg2 = RandomForestRegressor(random_state=1)
-reg3 = LinearRegression()
-ereg = VotingRegressor(estimators=[('gb', reg1), ('rf', reg2), ('lr', reg3)])
-ereg = ereg.fit(X, y) '''
-
-def transition_list_to_data(self, Ys):
-    length = len(self.transitions)
-    assert len(Ys) == length
-    array = np.empty((length, self.transitions[1][0].size + 2))
-    array[:,-1] = Ys
-    for i, transition in enumerate(self.transitions):
-        if transition[2] is None: continue
-        array[i,:-2] = transition[0]
-        array[i, -2] = ACTIONS.index(transition[1])
-
-    if os.path.isfile("my-saved-data.pt"):
-        with open("my-saved-data.pt", "rb") as file:
-            data_set = pickle.load(file)
-        data_set = np.concatenate((data_set, array))
-        with open("my-saved-data.pt", "wb") as file:
-            pickle.dump(data_set, file)
-    else:
-        with open("my-saved-data.pt", "wb") as file:
-            pickle.dump(array, file)
     return array
 
 def construct_Y(self):

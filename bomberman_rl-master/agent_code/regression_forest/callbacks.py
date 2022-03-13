@@ -57,7 +57,6 @@ def act(self, game_state: dict) -> str:
     possible = possible_steps(feature=game_state_use, game_state=game_state)
     if (self.train and random.random() < self.random_prob) or not os.path.isfile("my-saved-model.pt"):
         self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible)) #, p=[prob[i] for i in possible]
 
     self.logger.debug("Querying model for action.")
@@ -77,15 +76,6 @@ def act(self, game_state: dict) -> str:
 
 def state_to_features(game_state: dict) -> np.array:
     """
-    *This is not a required function, but an idea to structure your code.*
-
-    Converts the game state to the input of your model, i.e.
-    a feature vector.
-
-    You can find out about the state of the game environment via game_state,
-    which is a dictionary. Consult 'get_state_for_agent' in environment.py to see
-    what it contains.
-
     :param game_state:  A dictionary describing the current game board.
     :return: np.array
     """
@@ -93,28 +83,21 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    # For example, you could construct several channels of equal shape, ...
-    """
-    # concatenate them as a feature tensor (they must have the same shape), ...
-    stacked_channels = np.stack(channels)
-    # and return them as a vector
-    return stacked_channels.reshape(-1)
-    """
     features = np.zeros((4+176, 1))
     bombs = np.zeros((4, 3))
-    coins = np.zeros((3,2))
+    coins = np.zeros((3, 2))
     players = np.zeros((4, 3))
     field = game_state["field"]
     mask = np.ones(shape=field.shape, dtype=bool)
     mask[field == -1] = False
-    expl = game_state["explosion_map"]
-    expl = expl[(mask).nonzero()]
+    expl_crates = game_state["explosion_map"]
+    expl_crates = - expl_crates[(mask).nonzero()] + field[(mask).nonzero()]
     *_, (s0, s1) = game_state["self"]
     features[0] = game_state["round"]
     features[1] = game_state["step"]
     features[2] = s0
     features[3] = s1
-    features[4:, 0] = 3 * expl.flatten()
+    features[4:, 0] = 3 * expl_crates.flatten()
     b = game_state["bombs"].sort(key=lambda x: x[0][0]**2 + x[0][1]**2)
     others = game_state["others"].sort(key=lambda x: x[-1][0]**2 + x[-1][1]**2)
     if b is not None:
@@ -132,7 +115,7 @@ def state_to_features(game_state: dict) -> np.array:
     c = game_state["coins"].sort(key=lambda x: x[0]**2 + x[1]**2)
     if c is not None:
         for i, coin in enumerate(c):
-            if coin is None:
+            if coin is None or i == 3:
                 break
             coins[i, :] = np.array(s0-[coin[0], s1-coin[1]])
 
