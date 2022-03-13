@@ -143,7 +143,6 @@ def state_to_features(game_state: dict) -> np.array:
     assert out.shape[0] == 1
     return out
 
-
 def possible_steps(game_state, feature):
     actions = [4]
     j=3
@@ -169,7 +168,6 @@ def possible_steps(game_state, feature):
     if game_state['self'][2]:
         actions.append(5)
     return np.sort(actions)
-
 
 def return_distro(actions):
     length = len(actions)
