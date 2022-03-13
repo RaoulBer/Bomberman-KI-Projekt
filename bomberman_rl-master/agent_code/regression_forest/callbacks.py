@@ -8,6 +8,7 @@ import numpy as np
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 prob = [.2, .2, .2, .2, .1, .1]
 
+
 def setup(self):
     """
     Setup your code. This is called once when loading each agent.
@@ -48,13 +49,13 @@ def act(self, game_state: dict) -> str:
     """
     # todo Exploration vs exploitation
     self.round = 0
-    random_prob = 1
+    self.random_prob = 1
     if game_state["round"] > self.round:
         self.round = self.round + 1
-        random_prob = random_prob * 0.95
+        self.random_prob = self.random_prob * 0.95
     game_state_use = state_to_features(game_state)
     possible = possible_steps(feature=game_state_use, game_state=game_state)
-    if (self.train and random.random() < random_prob) or not os.path.isfile("my-saved-model.pt"):
+    if (self.train and random.random() < self.random_prob) or not os.path.isfile("my-saved-model.pt"):
         self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible)) #, p=[prob[i] for i in possible]
@@ -142,6 +143,7 @@ def state_to_features(game_state: dict) -> np.array:
     assert out.shape[0] == 1
     return out
 
+
 def possible_steps(game_state, feature):
     actions = [4]
     j=3
@@ -167,6 +169,7 @@ def possible_steps(game_state, feature):
     if game_state['self'][2]:
         actions.append(5)
     return np.sort(actions)
+
 
 def return_distro(actions):
     length = len(actions)
