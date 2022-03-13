@@ -118,6 +118,8 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
+    if self.transitions:
+        reward_sum += self.transitions[-1][-2][:,1] * 0.1
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
@@ -128,7 +130,7 @@ def update_model(self, weights=None):
     with open("my-saved-data.pt", "rb") as file:
         data_set = pickle.load(file)
     if not os.path.isfile("my-saved-model.pt"):  #
-        self.model = RandomForestRegressor(max_depth=100, random_state=0)
+        self.model = RandomForestRegressor(max_depth=200, random_state=0)
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
     else:
@@ -179,3 +181,7 @@ def construct_Y(self):
             val = 1
         Y.append(transition[-1] + LEARN_RATE * val)
     return Y
+
+
+def measure_performance(self):
+    ...
