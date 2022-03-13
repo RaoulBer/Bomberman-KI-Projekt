@@ -1,25 +1,23 @@
 import os
 import pickle
 import random
-
 import numpy as np
-import tensorflow as tf
-from keras.models import Sequential
-from keras.layers import Dense
+
+import torch as T
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
 import settings
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
-#model parameters
-action_size = len(ACTIONS)
-gamma = 0.95
-learning_rate = 0.001
 
 #factors determining explorative behaviour
 epsilon = 1.0
 epsilon_decay = 0.995
 epsilon_min = 0.10
+
 
 #feature counting
 roundNum = 1
@@ -27,19 +25,49 @@ stepNum = 1
 fieldNum = settings.ROWS * settings.COLS
 bombsNum = 3 * 4  # ((x,y)t) * number of max. active bombs
 explosion_mapNum = fieldNum # same number of parameters
-coinsNum = 4
+coinsNum = 18 # 9 * 2 coordinates
 selfNum = 3 # bomb is possible plus x and y coordinate
 othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
-featureSum = roundNum + stepNum + fieldNum + bombsNum + explosion_mapNum + coinsNum + selfNum + othersNum
+featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 
-def build_model():
-    model = Sequential()
-    model.add(Dense(featureSum, input_dim=featureSum, activation='relu'))
-    model.add(Dense(64, activation='relu'))
-    model.add(Dense(action_size, activation='linear'))
-    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
-    return model
+#model parameters
+action_size = len(ACTIONS)
+gamma = 0.90
+learning_rate = 0.0001
+fc1Dim = featureSum
+fc2Dim = 256
+
+
+class Model(nn.Module):
+    def __init__(self, lr, input_dims, fc1_dims, fc2_dims,
+                 n_actions):
+        super(Model, self).__init__()
+        self.input_dims = input_dims
+        self.fc1_dims = fc1_dims
+        self.fc2_dims = fc2_dims
+        self.n_actions = n_actions
+        self.fc1 = nn.Linear(self.input_dims, self.fc1_dims)
+        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
+        self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
+
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.loss = nn.MSELoss()
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        actions = self.fc3(x)
+
+        return actions
+
+
+def build_model(lr = learning_rate, inputDim=featureSum, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
+                n_actions=len(ACTIONS)):
+    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
+
 
 def setup(self):
     """
@@ -55,13 +83,23 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("my-saved-model.pt"):
+    if self.train and not os.path.isfile(
+            "agent_code//dnq_agent//model.pt"):
         self.logger.info("Setting up model from scratch.")
+        print("Setting up model from scratch.")
         self.model = build_model()
+
+    elif self.train and os.path.isfile("agent_code//dnq_agent//model.pt"):
+        print("Loading model from saved state.")
+        self.model = T.load("model.pt")
+
+
     else:
         self.logger.info("Loading model from saved state.")
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
+        print("Loading model from saved state.")
+        self.model = T.load(
+            "model.pt")
+
 
 def act(self, game_state: dict) -> str:
     """
@@ -80,42 +118,93 @@ def act(self, game_state: dict) -> str:
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
 
     self.logger.debug("Querying model for action.")
-    return ACTIONS[np.argmax(self.model.predict(state_to_features(game_state)))]
+    return ACTIONS[T.argmax(self.model.forward(state_to_features(game_state)))]
+
+def parseStep(game_state: dict) -> int:
+    try:
+        return game_state["step"]
+    except ValueError:
+        return 0
+
+
+def parseField(game_state: dict) -> np.array:
+    try:
+        return game_state["field"].reshape(-1)
+    except ValueError:
+        return np.zeros(fieldNum)
+
+
+def parseExplosionMap(game_state: dict) -> np.array:
+    try:
+        return game_state["explosion_map"].reshape(-1)
+    except ValueError:
+        return np.zeros(explosion_mapNum)
+
+
+def parseCombinedFieldExplosionMap(game_state: dict) -> np.array:
+    try:
+        return parseField(game_state) - 2 * parseExplosionMap(game_state)
+    except ValueError:
+        return np.zeros(explosion_mapNum)
+
 
 def parseBombs(game_state: dict) -> np.array:
-    bombVector = []
-    for bomb in game_state["bombs"]:
-        bombVector.append(bomb[0][0])
-        bombVector.append(bomb[0][1])
-        bombVector.append(bomb[1])
+    try:
+        bombVector = []
+        for bomb in game_state["bombs"]:
+            bombVector.append(bomb[0][0])
+            bombVector.append(bomb[0][1])
+            bombVector.append(bomb[1])
 
-    while len(bombVector) < bombsNum:
-        bombVector.append(0)
+        while len(bombVector) < bombsNum:
+            bombVector.append(0)
 
-    return np.array(bombVector)
+        return np.array(bombVector)
+    except ValueError:
+        return np.zeros(bombsNum)
 
-def parseCoins(game_state: dict) ->np.array:
-    coinVector = []
-    for coin in game_state["coins"]:
-        coinVector.append(coin[0])
-        coinVector.append(coin[1])
 
-    while len(coinVector) < coinsNum:
-        coinVector.append(0)
+def parseCoins(game_state: dict) -> np.array:
+    try:
+        coinVector = []
+        for coin in game_state["coins"]:
+            coinVector.append(coin[0])
+            coinVector.append(coin[1])
 
-    return np.array(coinVector)
+        while len(coinVector) < coinsNum:
+            coinVector.append(0)
 
-def parseOthers(game_state: dict) ->np.array:
-    otherVector = []
-    for other in game_state["others"]:
-        otherVector.append(other[2])
-        otherVector.append(other[3][0])
-        otherVector.append(other[3][1])
+        return np.array(coinVector)
+    except ValueError:
+        return np.zeros(coinsNum)
 
-    while len(otherVector) < othersNum:
-        otherVector.append(0)
 
-    return np.array(otherVector)
+def parseSelf(game_state: dict) -> np.array:
+    try:
+        selfVector = np.array([game_state["self"][2],
+                               game_state["self"][3][0],
+                               game_state["self"][3][1]])
+        return selfVector
+    except ValueError:
+        return np.zeros(3)
+
+
+def parseOthers(game_state: dict) -> np.array:
+    try:
+        otherVector = []
+        for other in game_state["others"]:
+            otherVector.append(other[2])
+            otherVector.append(other[3][0])
+            otherVector.append(other[3][1])
+
+        while len(otherVector) < othersNum:
+            otherVector.append(0)
+
+        return np.array(otherVector)
+
+    except ValueError:
+        return np.zeros(othersNum)
+
 
 def state_to_features(game_state: dict) -> np.array:
     """
@@ -137,24 +226,14 @@ def state_to_features(game_state: dict) -> np.array:
 
     featurevector = np.zeros(featureSum)
     temp = 0
-    featurevector[0] = game_state["round"]
-    temp += 1
-    featurevector[temp] = game_state["step"]
-    temp += 1
-    featurevector[temp:temp+fieldNum] = game_state["field"].reshape(-1)
+    featurevector[temp:temp+fieldNum] = parseCombinedFieldExplosionMap(game_state)
     temp += fieldNum
     featurevector[temp:temp+bombsNum] = parseBombs(game_state)
     temp += bombsNum
-    featurevector[temp:temp+explosion_mapNum] = game_state["explosion_map"].reshape(-1)
-    temp += explosion_mapNum
     featurevector[temp:temp+coinsNum] = parseCoins(game_state)
     temp += coinsNum
-    featurevector[temp] = game_state["self"][2]
-    temp += 1
-    featurevector[temp] = game_state["self"][3][0]
-    temp += 1
-    featurevector[temp] = game_state["self"][3][1]
-    temp += 1
+    featurevector[temp:temp+3] = parseSelf(game_state)
+    temp += 3
     featurevector[temp:temp+othersNum] = parseOthers(game_state)
 
-    return np.array([featurevector])
+    return T.tensor(featurevector).float()
