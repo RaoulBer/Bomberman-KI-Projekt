@@ -34,9 +34,10 @@ featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.90
-learning_rate = 0.0001
-fc1Dim = featureSum
-fc2Dim = 256
+learning_rate = 0.01
+fc1Dim = int((settings.ROWS * settings.COLS) / 2)
+fc2Dim = int((settings.ROWS * settings.COLS) / 4)
+input_dims = (settings.ROWS * settings.COLS)
 
 
 class Model(nn.Module):
@@ -64,7 +65,7 @@ class Model(nn.Module):
         return actions
 
 
-def build_model(lr = learning_rate, inputDim=featureSum, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
+def build_model(lr = learning_rate, inputDim= input_dims, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
                 n_actions=len(ACTIONS)):
     return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
 
@@ -97,8 +98,7 @@ def setup(self):
     else:
         self.logger.info("Loading model from saved state.")
         print("Loading model from saved state.")
-        self.model = T.load(
-            "model.pt")
+        self.model = T.load("model.pt")
 
 
 def act(self, game_state: dict) -> str:
@@ -129,82 +129,57 @@ def parseStep(game_state: dict) -> int:
 
 def parseField(game_state: dict) -> np.array:
     try:
-        return game_state["field"].reshape(-1)
+        return game_state["field"]
     except ValueError:
-        return np.zeros(fieldNum)
+        print("Value error in field parser")
 
 
 def parseExplosionMap(game_state: dict) -> np.array:
     try:
-        return game_state["explosion_map"].reshape(-1)
+        return game_state["explosion_map"]
     except ValueError:
-        return np.zeros(explosion_mapNum)
+        print("Value error in explosion map parser")
 
 
 def parseCombinedFieldExplosionMap(game_state: dict) -> np.array:
     try:
         return parseField(game_state) - 2 * parseExplosionMap(game_state)
     except ValueError:
-        return np.zeros(explosion_mapNum)
+        print("Value error in combined field and explosion map parser")
 
 
-def parseBombs(game_state: dict) -> np.array:
+def parseBombs(game_state: dict, featurevector) -> np.array:
     try:
-        bombVector = []
         for bomb in game_state["bombs"]:
-            bombVector.append(bomb[0][0])
-            bombVector.append(bomb[0][1])
-            bombVector.append(bomb[1])
+            featurevector[bomb[0][0]][bomb[0][1]] = -10 * bomb[1]
 
-        while len(bombVector) < bombsNum:
-            bombVector.append(0)
-
-        return np.array(bombVector)
     except ValueError:
-        return np.zeros(bombsNum)
+        print("Value Error in bomb parser")
 
 
-def parseCoins(game_state: dict) -> np.array:
+def parseCoins(game_state: dict, featurevector) -> np.array:
     try:
-        coinVector = []
         for coin in game_state["coins"]:
-            coinVector.append(coin[0])
-            coinVector.append(coin[1])
+            featurevector[coin[0]][coin[1]] = 10
 
-        while len(coinVector) < coinsNum:
-            coinVector.append(0)
-
-        return np.array(coinVector)
     except ValueError:
-        return np.zeros(coinsNum)
+        print("Value Error in coin parser")
 
-
-def parseSelf(game_state: dict) -> np.array:
+def parseSelf(game_state: dict, featurevector) -> np.array:
     try:
-        selfVector = np.array([game_state["self"][2],
-                               game_state["self"][3][0],
-                               game_state["self"][3][1]])
-        return selfVector
+        featurevector[game_state["self"][3][0]][game_state["self"][3][1]] = 100 if game_state["self"][2] else -100
+
     except ValueError:
-        return np.zeros(3)
+        print("Error in Self parser")
 
 
-def parseOthers(game_state: dict) -> np.array:
+def parseOthers(game_state: dict, featurevector) -> np.array:
     try:
-        otherVector = []
         for other in game_state["others"]:
-            otherVector.append(other[2])
-            otherVector.append(other[3][0])
-            otherVector.append(other[3][1])
-
-        while len(otherVector) < othersNum:
-            otherVector.append(0)
-
-        return np.array(otherVector)
+            featurevector[other[3][0]][other[3][1]] = 60 if game_state["self"][2] else -60
 
     except ValueError:
-        return np.zeros(othersNum)
-
+        print("Value error in Others parser")
 
 def state_to_features(game_state: dict) -> np.array:
     """
@@ -224,16 +199,10 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    featurevector = np.zeros(featureSum)
-    temp = 0
-    featurevector[temp:temp+fieldNum] = parseCombinedFieldExplosionMap(game_state)
-    temp += fieldNum
-    featurevector[temp:temp+bombsNum] = parseBombs(game_state)
-    temp += bombsNum
-    featurevector[temp:temp+coinsNum] = parseCoins(game_state)
-    temp += coinsNum
-    featurevector[temp:temp+3] = parseSelf(game_state)
-    temp += 3
-    featurevector[temp:temp+othersNum] = parseOthers(game_state)
+    featurevector = parseCombinedFieldExplosionMap(game_state)
+    parseBombs(game_state, featurevector)
+    parseCoins(game_state, featurevector)
+    parseSelf(game_state, featurevector)
+    parseOthers(game_state, featurevector)
 
-    return T.tensor(featurevector).float()
+    return T.tensor(featurevector.flatten()).float()
