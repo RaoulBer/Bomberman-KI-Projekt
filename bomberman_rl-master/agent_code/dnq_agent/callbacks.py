@@ -7,6 +7,7 @@ import torch as T
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import itertools
 
 import settings
 
@@ -15,7 +16,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 #factors determining explorative behaviour
 epsilon = 1.0
-epsilon_decay = 0.995
+epsilon_decay = 0.9995
 epsilon_min = 0.10
 
 
@@ -34,7 +35,7 @@ featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.90
-learning_rate = 0.01
+learning_rate = 0.0001
 fc1Dim = int((settings.ROWS * settings.COLS) / 2)
 fc2Dim = int((settings.ROWS * settings.COLS) / 4)
 input_dims = (settings.ROWS * settings.COLS)
@@ -84,21 +85,22 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train and not os.path.isfile(
-            "agent_code//dnq_agent//model.pt"):
+    modelname = "model.pt"
+    modelpath = os.path.join(os.getcwd(), modelname)
+
+    if self.train and not os.path.isfile(os.path.join(os.getcwd(), modelname)):
         self.logger.info("Setting up model from scratch.")
         print("Setting up model from scratch.")
         self.model = build_model()
 
-    elif self.train and os.path.isfile("agent_code//dnq_agent//model.pt"):
+    elif self.train and os.path.isfile(os.path.join(os.getcwd(), modelname)):
         print("Loading model from saved state.")
-        self.model = T.load("model.pt")
-
+        self.model = T.load(modelpath)
 
     else:
         self.logger.info("Loading model from saved state.")
         print("Loading model from saved state.")
-        self.model = T.load("model.pt")
+        self.model = T.load(modelpath)
 
 
 def act(self, game_state: dict) -> str:
@@ -111,14 +113,54 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     # todo Exploration vs exploitation
-    random_prob = .1
-    if self.train and random.random() <= epsilon:
-        self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
 
-    self.logger.debug("Querying model for action.")
-    return ACTIONS[T.argmax(self.model.forward(state_to_features(game_state)))]
+    if self.train and random.random() <= epsilon:
+        #self.logger.debug("Choosing action purely at random.")
+        # 80%: walk in any direction. 10% wait. 10% bomb.
+        return np.random.choice([a for idx, a in enumerate(ACTIONS) if validAction(game_state)[idx]])
+
+    #self.logger.debug("Querying model for action.")
+
+    """
+    inputvec = state_to_features(game_state)    
+    print("Input vector :", inputvec)
+    print("prediction of q values: ", self.model.forward(inputvec))
+    """
+
+    predicted_q_values = self.model.forward(state_to_features(game_state))
+    action_chosen = ACTIONS[T.argmax(excludeInvalidActions(game_state,predicted_q_values))]
+    print("Action: ", action_chosen)
+
+    return action_chosen
+
+def validAction(game_state: dict):
+    validAction = [True, True, True, True, True, True]
+    playerx, playery = game_state["self"][3]
+
+    #UP
+    if (game_state["field"][playerx][playery-1] != 0):
+        validAction[0] = False
+    #RIGHT
+    if (game_state["field"][playerx+1][playery] != 0):
+        validAction[1] = False
+    #DOWN
+    if (game_state["field"][playerx][playery+1] != 0):
+        validAction[2] = False
+    #LEFT
+    if (game_state["field"][playerx-1][playery] != 0):
+        validAction[3] = False
+
+    validAction[5] = game_state["self"][2]
+
+    return validAction
+
+def excludeInvalidActions(game_state: dict, q_values_tensor):
+    possibleList = validAction(game_state)
+    for i in range(0, len(q_values_tensor)):
+        if not possibleList[i]:
+            q_values_tensor[i] = float(-np.inf)
+
+    return q_values_tensor
 
 def parseStep(game_state: dict) -> int:
     try:
@@ -181,7 +223,7 @@ def parseOthers(game_state: dict, featurevector) -> np.array:
     except ValueError:
         print("Value error in Others parser")
 
-def state_to_features(game_state: dict) -> np.array:
+def state_to_features(game_state: dict):
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -197,7 +239,7 @@ def state_to_features(game_state: dict) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return None
+        return T.tensor([0])
 
     featurevector = parseCombinedFieldExplosionMap(game_state)
     parseBombs(game_state, featurevector)
