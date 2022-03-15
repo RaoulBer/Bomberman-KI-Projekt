@@ -7,7 +7,8 @@ from typing import List
 import os
 
 import events as e
-import callbacks as callbacks
+import settings
+from . import callbacks
 
 import torch as T
 
@@ -40,12 +41,12 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, callbacks.featureSum), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, callbacks.featureSum), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, settings.COLS * settings.ROWS), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, settings.COLS * settings.ROWS), dtype=np.float32)
 
-    self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32) # TODO: callbacks.featureSUm zu TRANSITION_HISTORY_SIZE
+    self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
-    self.terminals = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32) # TODO : NOCH ZU entfernen
+    self.terminals = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.MEMORY_ITERATOR = 0
     self.ITERATION_COUNTER = 0
     self.gamma = callbacks.gamma
