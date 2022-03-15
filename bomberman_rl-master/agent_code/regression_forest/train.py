@@ -3,9 +3,9 @@ import os
 import pickle
 from typing import List
 import numpy as np
-from sklearn.kernel_ridge import KernelRidge
 import events as e
 from .callbacks import state_to_features
+from .callbacks import possible_steps
 from sklearn.ensemble import RandomForestRegressor
 
 
@@ -105,21 +105,26 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_OPPONENT: 5,
         e.GOT_KILLED: -10,
         e.KILLED_SELF: -8,
-        e.WAITED: -1,
+        e.WAITED: -2,
         e.CRATE_DESTROYED: 3,
         e.INVALID_ACTION: -2,
-        e.MOVED_LEFT: 1.5,
-        e.MOVED_RIGHT: 1.5,
-        e.MOVED_UP: 1.5,
-        e.MOVED_DOWN: 1.5
+        e.BOMB_DROPPED: -2
+        #e.MOVED_LEFT: 1.5,
+        #e.MOVED_RIGHT: 1.5,
+        #e.MOVED_UP: 1.5,
+        #e.MOVED_DOWN: 1.5
         # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    if self.transitions:
-        reward_sum += self.transitions[-1][-2][:,1] * 0.1
+    #if self.transitions:
+    #    reward_sum += self.transitions[-1][-2][:,1] * 0.1
+    if len(self.transitions) > 3:
+        if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
+            reward_sum -= 5
+            self.logger.info(f"Punished repeated action")
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
@@ -130,7 +135,7 @@ def update_model(self, weights=None):
     with open("my-saved-data.pt", "rb") as file:
         data_set = pickle.load(file)
     if not os.path.isfile("my-saved-model.pt"):  #
-        self.model = RandomForestRegressor(max_depth=200, random_state=0)
+        self.model = RandomForestRegressor(max_depth=300, random_state=0)
         with open("my-saved-model.pt", "wb") as file:
             pickle.dump(self.model, file)
     else:
@@ -172,16 +177,44 @@ def transition_list_to_data(self, Ys):
 def construct_Y(self):
     Y = []
     for transition in self.transitions:
-        if type(self.model) != type(np.empty(1)) and transition[2] is not None:
+        if type(self.model) != type(np.empty(1)) and transition[2] is not None and transition[0] is not None:
             data = np.empty((1, transition[2].size + 1))
-            data[:, :-1] = transition[2]
+            data[:, :-1] = transition[0]
             data[0, -1] = ACTIONS.index(transition[1])
-            val = np.max(self.model.predict(data))
+            data2 = np.empty((1, transition[2].size + 1))
+            data2[0,:-1] = transition[2]
+            val = self.model.predict(data)
+            ret = []
+            for i in possible_steps(feature = transition[2], bomb = True):
+                data2[0,-1] = i
+                ret.append(self.model.predict(data2))
+            val2 = np.max(ret)
+
         else:
-            val = 1
-        Y.append(transition[-1] + LEARN_RATE * val)
+            val = 0
+            val2 = 0
+        Y.append(transition[-1] + LEARN_RATE * val + LEARN_RATE**2 * val2)
     return Y
 
 
-def measure_performance(self):
-    ...
+def measure_performance(self, events: List[str]):
+    np.empty
+    game_rewards = {
+        e.COIN_COLLECTED: 1,
+        e.KILLED_OPPONENT: 5,
+        e.GOT_KILLED: -5,
+        e.KILLED_SELF: -5,
+        e.CRATE_DESTROYED: 0.5,
+        e.INVALID_ACTION: -1
+    }
+    reward_sum = 0
+    for event in events:
+        if event in game_rewards:
+            reward_sum += game_rewards[event]
+    # if self.transitions:
+    #    reward_sum += self.transitions[-1][-2][:,1]
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    if reward_sum is None:
+        return 0
+    return reward_sum
+

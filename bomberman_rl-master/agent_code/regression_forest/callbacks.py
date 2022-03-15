@@ -9,6 +9,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 prob = [.2, .2, .2, .2, .1, .1]
 
 
+
 def setup(self):
     """
     Setup your code. This is called once when loading each agent.
@@ -23,6 +24,9 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
+    self.round = 1
+    self.random_prob = 0.3
+
     if self.train and not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         weights = np.random.rand(len(ACTIONS))
@@ -31,6 +35,10 @@ def setup(self):
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
+    if not self.train:
+        with open("my-saved-data.pt", "rb") as file:
+            data= pickle.load(file)
+        self.model.fit(data[:,:-1], data[:,-1])
         #with open("saved_feature_reduction.pt", "rb") as file:
         #    self.feature_red = pickle.load(file)
 
@@ -48,16 +56,15 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     # todo Exploration vs exploitation
-    self.round = 0
-    self.random_prob = 1
-    if game_state["round"] > self.round:
-        self.round = self.round + 1
+    if game_state["round"] != self.round:
+        self.round = game_state["step"]
         self.random_prob = self.random_prob * 0.95
+
     game_state_use = state_to_features(game_state)
-    possible = possible_steps(feature=game_state_use, game_state=game_state)
+    possible = possible_steps(feature=game_state_use, bomb = game_state['self'][2])
     if (self.train and random.random() < self.random_prob) or not os.path.isfile("my-saved-model.pt"):
         self.logger.debug("Choosing action purely at random.")
-        return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible)) #, p=[prob[i] for i in possible]
+        return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
     self.logger.debug("Querying model for action.")
 
@@ -98,8 +105,8 @@ def state_to_features(game_state: dict) -> np.array:
     features[2] = s0
     features[3] = s1
     features[4:, 0] = 3 * expl_crates.flatten()
-    b = game_state["bombs"].sort(key=lambda x: x[0][0]**2 + x[0][1]**2)
-    others = game_state["others"].sort(key=lambda x: x[-1][0]**2 + x[-1][1]**2)
+    b = game_state["bombs"].sort(key=lambda x: (s0-x[0][0])**2 + (s1-x[0][1])**2)
+    others = game_state["others"].sort(key=lambda x: (s0-x[-1][0])**2 + (s1-x[-1][1])**2)
     if b is not None:
         for i, bomb in enumerate(b):
             bombs[i,:] = np.array(s0-[bomb[0][0], s1-bomb[0][1], bomb[1]])
@@ -112,7 +119,7 @@ def state_to_features(game_state: dict) -> np.array:
             else:
                 players[i, :] = np.array(s0-[other[-1][0], s1-other[-1][1], other[1]])
 
-    c = game_state["coins"].sort(key=lambda x: x[0]**2 + x[1]**2)
+    c = game_state["coins"].sort(key=lambda x: (s0-x[0])**2 + (s1-x[1])**2)
     if c is not None:
         for i, coin in enumerate(c):
             if coin is None or i == 3:
@@ -126,7 +133,7 @@ def state_to_features(game_state: dict) -> np.array:
     assert out.shape[0] == 1
     return out
 
-def possible_steps(game_state, feature):
+def possible_steps(feature, bomb = True):
     actions = [4]
     j=3
     i=2
@@ -148,7 +155,7 @@ def possible_steps(game_state, feature):
                 actions.append(1)
         else:
             actions.append(3)
-    if game_state['self'][2]:
+    if bomb:
         actions.append(5)
     return np.sort(actions)
 
@@ -161,3 +168,15 @@ def return_distro(actions):
     out = np.array([frac for _ in range(length)])
     out[actions > 3] = frac/2
     return out
+
+
+def make_dependencies(data):
+    extension = np.zeros(shape=(data.shape[0], 10))
+    # Coin-Relation (Three coins)
+    for i in range(3):
+        extension[:, data[:, -1]+(i*3)] = np.norm(data[:, (-8+2*i):(-6+2*i)])
+    for i in range(4):
+        extension[:, data[:, -1]+(i*3)] = np.norm(data[:, (-18+3*i):(-15+3*i)])
+    return np.concatenate((data, extension))
+
+    ... # Todo für jede Handlung multiplikative Elemente einfügen
