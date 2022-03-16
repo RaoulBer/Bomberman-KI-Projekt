@@ -18,9 +18,9 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-batch_size = 64
+batch_size = 32
 
 # Events
 PLACEHOLDER = "PLACEHOLDER"
@@ -71,7 +71,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param new_game_state: The state the agent is in now.
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
-    self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
+    #self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     # Idea: Add your own events to hand out rewards
     #Leaving this out for now
@@ -79,17 +79,21 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
      #   events.append("WAITED")
 
     # state_to_features is defined in callbacks.py
-    ##self.transitions.append(Transition(old_game_state, self_action,
-      ##                                 new_game_state, reward_from_events(self, events)))
+
 
     idx = (self.MEMORY_ITERATOR % TRANSITION_HISTORY_SIZE) - 1
-    self.states[idx] = callbacks.state_to_features(old_game_state)
-    self.nextstates[idx] = callbacks.state_to_features(new_game_state)
-    self.rewards[idx] = reward_from_events(self, events)
-    self.actions[idx] = callbacks.ACTIONS.index(self_action)
-    self.terminals[idx] = 0
 
-    self.MEMORY_ITERATOR += 1
+    if old_game_state == None:
+        pass
+
+    else:
+        self.states[idx] = callbacks.state_to_features(old_game_state)
+        self.nextstates[idx] = callbacks.state_to_features(new_game_state)
+        self.rewards[idx] = reward_from_events(self, events)
+        self.actions[idx] = callbacks.ACTIONS.index(self_action)
+        self.terminals[idx] = 0
+
+        self.MEMORY_ITERATOR += 1
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -104,7 +108,16 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     :param self: The same object that is passed to all of your callbacks.
     """
-    self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
+    #self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
+
+    idx = (self.MEMORY_ITERATOR % TRANSITION_HISTORY_SIZE) - 1
+    self.states[idx] = callbacks.state_to_features(last_game_state)
+    self.nextstates[idx] = callbacks.state_to_features(None)
+    self.rewards[idx] = reward_from_events(self, events)
+    self.actions[idx] = callbacks.ACTIONS.index(last_action)
+    self.terminals[idx] = 1
+
+    self.MEMORY_ITERATOR += 1
 
     if self.MEMORY_ITERATOR < self.batch_size:
         pass
@@ -125,57 +138,26 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         evaled = self.model.forward(state_batch)[batch_idx, action_batch]
         next = self.model.forward(new_state_batch)
-        #next[terminal_batch] = 0.0
+        next[terminal_batch.long()] = 0.0
 
         target = reward_batch + self.gamma * T.max(next, dim=1)[0]
+
+        print("Reward: ", T.sum(reward_batch), end="")
 
         loss = self.model.loss(target, evaled).to(self.model.device)
         loss.backward()
         self.model.optimizer.step()
+        #To raise an error if the gradient is null somewhere
+        T.autograd.set_detect_anomaly(True)
 
         self.ITERATION_COUNTER += 1
+        print("epsilon: ", callbacks.epsilon)
         callbacks.epsilon = callbacks.epsilon * callbacks.epsilon_decay if callbacks.epsilon > callbacks.epsilon_min \
             else callbacks.epsilon_min
 
+
         if self.ITERATION_COUNTER % 100 == 0:
             T.save(self.model, "model.pt")
-
-    """
-    self.transitions.append(Transition(last_game_state, last_action,
-                                       None, reward_from_events(self, events)))
-
-    if len(self.transitions) < 16:
-        minibatch = self.transitions
-        self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-    else:
-        minibatch = random.sample(self.transitions, 16)
-        self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-
-        for idx, (state, action, next_state, reward) in enumerate(minibatch):
-            if state is None:
-                continue
-
-            if next_state is None:
-                try:
-                    target = np.array(self.model.predict(callbacks.state_to_features(state)))
-                    target[0][callbacks.ACTIONS.index(action)] = reward
-                except ValueError:
-                    print("Here is a problem")
-            else:
-                try:
-                    target = np.array(self.model.predict(callbacks.state_to_features(state)))
-                    target[0][callbacks.ACTIONS.index(action)] = \
-                        reward + callbacks.gamma * np.amax(self.model.predict(callbacks.state_to_features(next_state))[0])
-                    self.model.fit(
-                        callbacks.state_to_features(state), target, epochs=epochs_per_state, verbose=training_verbosity)
-                except ValueError:
-                    print("Valeo")
-                    #continue
-
-        if callbacks.epsilon > callbacks.epsilon_min:
-            callbacks.epsilon *= callbacks.epsilon_decay
-            print(callbacks.epsilon)
-    """
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -198,5 +180,5 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
