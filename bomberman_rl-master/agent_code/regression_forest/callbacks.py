@@ -90,41 +90,45 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    features = np.zeros((4+176, 1))
-    bombs = np.zeros((4, 3))
-    coins = np.zeros((3, 2))
-    players = np.zeros((4, 3))
-    field = game_state["field"]
-    mask = np.ones(shape=field.shape, dtype=bool)
-    mask[field == -1] = False
-    expl_crates = game_state["explosion_map"]
-    expl_crates = - expl_crates[(mask).nonzero()] + field[(mask).nonzero()]
     *_, (s0, s1) = game_state["self"]
+    features = np.zeros((4 + 48, 1))
     features[0] = game_state["round"]
     features[1] = game_state["step"]
     features[2] = s0
     features[3] = s1
-    features[4:, 0] = 3 * expl_crates.flatten()
+    bombs = np.zeros((4, 3))
+    coins = np.zeros((3, 2))
+    players = np.zeros((4, 3))
+    field = game_state["field"]
+    mask2 = np.ones(shape=field.shape, dtype=bool)
+    mask1 = np.zeros(shape=field.shape, dtype=bool)
+    mask1[np.max([0,s0-4]):np.min([16, s0+4]), np.max([0,s1-4]):np.min([16, s1+4])] = True
+    mask2[field == -1] = False
+    mask2 = mask2[(mask1).nonzero()]
+    expl_crates = game_state["explosion_map"][(mask1).nonzero()]
+    field = field[(mask1).nonzero()]
+    expl_crates = - expl_crates[(mask2).nonzero()] + field[(mask2).nonzero()]
+    features[4:expl_crates.size+4, 0] = 3 * expl_crates.flatten()
     b = game_state["bombs"].sort(key=lambda x: (s0-x[0][0])**2 + (s1-x[0][1])**2)
     others = game_state["others"].sort(key=lambda x: (s0-x[-1][0])**2 + (s1-x[-1][1])**2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i,:] = np.array(s0-[bomb[0][0], s1-bomb[0][1], bomb[1]])
+            bombs[i,:] = np.array([s0-bomb[0][0], s1-bomb[0][1], bomb[1]])
     if others is not None:
         for i, other in enumerate(others):
             if other is None:
                 break
             if other[2]:
-                players[i, :] = np.array(s0-[other[-1][0], s1-other[-1][1], -5])
+                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], -5])
             else:
-                players[i, :] = np.array(s0-[other[-1][0], s1-other[-1][1], other[1]])
+                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], other[1]])
 
     c = game_state["coins"].sort(key=lambda x: (s0-x[0])**2 + (s1-x[1])**2)
     if c is not None:
         for i, coin in enumerate(c):
             if coin is None or i == 3:
                 break
-            coins[i, :] = np.array(s0-[coin[0], s1-coin[1]])
+            coins[i, :] = np.array([s0-coin[0], s1-coin[1]])
 
     bombs = bombs.reshape(12, 1)
     players = players.reshape(12, 1)

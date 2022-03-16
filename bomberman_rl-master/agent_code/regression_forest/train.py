@@ -36,6 +36,8 @@ def setup_training(self):
     if os.path.isfile("my-saved-model.pt"):
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
+    with open("rewards.pt", "wb") as file:
+        pickle.dump([], file)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -57,6 +59,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # Idea: Add your own events to hand out rewards
     if ...:
         events.append(PLACEHOLDER_EVENT)
+    with open("rewards.pt", "rb") as file:
+        re = pickle.load(file)
+    re.append(measure_performance(self, events))
+    with open("rewards.pt", "wb") as file:
+        pickle.dump(re, file)
 
     # state_to_features is defined in callbacks.py
     if old_game_state is not None and new_game_state is not None and self_action is not None:
@@ -89,10 +96,26 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     # todo update/write new model here :)
     y_t = construct_Y(self)
     transition_list_to_data(self, Ys=y_t)
+
+    with open("my-saved-data.pt", "rb") as file:
+        array = pickle.load(file)
+
+    output_data = unique(array)
+
+    with open("my-saved-data.pt", "wb") as file:
+        pickle.dump(output_data, file)
+
+
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
-
+def unique(a):
+    order = np.lexsort(a.T)
+    a = a[order]
+    diff = np.diff(a, axis=0)
+    ui = np.ones(len(a), 'bool')
+    ui[1:] = (diff != 0).any(axis=1)
+    return a[ui]
 
 def reward_from_events(self, events: List[str]) -> int:
     """
@@ -186,7 +209,7 @@ def construct_Y(self):
             val = self.model.predict(data)
             ret = []
             for i in possible_steps(feature = transition[2], bomb = True):
-                data2[0,-1] = i
+                data2[0, -1] = i
                 ret.append(self.model.predict(data2))
             val2 = np.max(ret)
 
@@ -198,16 +221,14 @@ def construct_Y(self):
 
 
 def measure_performance(self, events: List[str]):
-    np.empty
     game_rewards = {
-        e.COIN_COLLECTED: 1,
-        e.KILLED_OPPONENT: 5,
-        e.GOT_KILLED: -5,
-        e.KILLED_SELF: -5,
-        e.CRATE_DESTROYED: 0.5,
-        e.INVALID_ACTION: -1
+        e.COIN_COLLECTED: 2,
+        e.KILLED_OPPONENT: 6,
+        e.GOT_KILLED: -4,
+        e.KILLED_SELF: -4,
+        e.CRATE_DESTROYED: 1.5,
     }
-    reward_sum = 0
+    reward_sum = -1
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
