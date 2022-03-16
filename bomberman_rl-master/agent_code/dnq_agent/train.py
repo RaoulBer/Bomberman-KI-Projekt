@@ -20,7 +20,7 @@ Transition = namedtuple('Transition',
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-batch_size = 32
+batch_size = 64
 
 # Events
 PLACEHOLDER = "PLACEHOLDER"
@@ -41,8 +41,8 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, settings.COLS * settings.ROWS), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, settings.COLS * settings.ROWS), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -136,7 +136,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         reward_batch = T.tensor(self.rewards[batch]).to(self.model.device)
         terminal_batch = T.tensor(self.terminals[batch]).to(self.model.device)
 
-        evaled = self.model.forward(state_batch)[batch_idx, action_batch]
+        evaled_temp = self.model.forward(state_batch)
+        evaled = evaled_temp[batch_idx, action_batch]
         next = self.model.forward(new_state_batch)
         next[terminal_batch.long()] = 0.0
 
@@ -180,5 +181,7 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
+        if e.INVALID_ACTION:
+            print("Invalid")
     #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum

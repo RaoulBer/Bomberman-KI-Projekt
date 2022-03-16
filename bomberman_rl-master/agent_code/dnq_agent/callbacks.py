@@ -4,6 +4,7 @@ import random
 import numpy as np
 
 import torch as T
+import torch.nn
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -16,40 +17,36 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 #factors determining explorative behaviour
 epsilon = 1.0
-epsilon_decay = 0.9995
+epsilon_decay = 0.99995
 epsilon_min = 0.10
-
-
-#feature counting
-roundNum = 1
-stepNum = 1
-fieldNum = settings.ROWS * settings.COLS
-bombsNum = 3 * 4  # ((x,y)t) * number of max. active bombs
-explosion_mapNum = fieldNum # same number of parameters
-coinsNum = 18 # 9 * 2 coordinates
-selfNum = 3 # bomb is possible plus x and y coordinate
-othersNum = 3 * 3 # bomb is possible plus x and y coordinate times 3
-featureSum = fieldNum + bombsNum + coinsNum + selfNum + othersNum
 
 
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.90
 learning_rate = 0.0001
-fc1Dim = int((settings.ROWS * settings.COLS) / 2)
-fc2Dim = int((settings.ROWS * settings.COLS) / 4)
-input_dims = (settings.ROWS * settings.COLS)
-
+fc1Dim = 512
+fc2Dim = 256
+kernel_size = 5
+input_channels = 4 #how many feature maps in nn (static, dynamic, deadly)=3
 
 class Model(nn.Module):
-    def __init__(self, lr, input_dims, fc1_dims, fc2_dims,
+    def __init__(self, lr, input_channels, kernel_size, fc1_dims, fc2_dims,
                  n_actions):
         super(Model, self).__init__()
-        self.input_dims = input_dims
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
+        self.kernel_size = kernel_size
+        assert self.kernel_size % 2 != 0, "Kernel size has to be an odd integer"
+        self.conv_output_dims = (17 - 2*(self.kernel_size - 1))**2
+        self.fc_input_dims = 1296
         self.n_actions = n_actions
-        self.fc1 = nn.Linear(self.input_dims, self.fc1_dims)
+        self.input_channels = input_channels
+
+        self.conv1 = nn.Conv2d(self.input_channels, 2 * self.input_channels, self.kernel_size)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(2 * input_channels, 4 * input_channels, self.kernel_size)
+        self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
 
@@ -59,16 +56,20 @@ class Model(nn.Module):
         self.to(self.device)
 
     def forward(self, state):
-        x = F.relu(self.fc1(state))
+        x = F.relu(self.conv1(state))
+        x = F.relu(self.conv2(x))
+        x = x.view(-1, 1296)
+        x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         actions = self.fc3(x)
 
         return actions
 
 
-def build_model(lr = learning_rate, inputDim= input_dims, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
-                n_actions=len(ACTIONS)):
-    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
+def build_model(lr=learning_rate, input_channels=input_channels, kernel_size=kernel_size,
+                fc1Dim= fc1Dim, fc2Dim=fc2Dim, n_actions=len(ACTIONS)):
+    return Model(lr=lr, input_channels=input_channels, kernel_size=kernel_size,
+                 fc1_dims=fc1Dim, fc2_dims=fc2Dim, n_actions=n_actions)
 
 
 def setup(self):
@@ -117,7 +118,12 @@ def act(self, game_state: dict) -> str:
     if self.train and random.random() <= epsilon:
         #self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice([a for idx, a in enumerate(ACTIONS) if validAction(game_state)[idx]])
+        #ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+        valids = validAction(game_state)
+        possible_actions = [a for idx, a in enumerate(ACTIONS) if valids[idx]]
+        action_chosen = np.random.choice(possible_actions)
+        print("Action:", action_chosen)
+        return action_chosen
 
     #self.logger.debug("Querying model for action.")
 
@@ -126,41 +132,56 @@ def act(self, game_state: dict) -> str:
     print("Input vector :", inputvec)
     print("prediction of q values: ", self.model.forward(inputvec))
     """
-
+    valids = validAction(game_state)
     predicted_q_values = self.model.forward(state_to_features(game_state))
-    action_chosen = ACTIONS[T.argmax(excludeInvalidActions(game_state,predicted_q_values))]
+    excluded_q_values = excludeInvalidActions(game_state, predicted_q_values)
+    action_chosen = ACTIONS[T.argmax(excluded_q_values)]
     print("Action: ", action_chosen)
 
     return action_chosen
 
 def validAction(game_state: dict):
     validAction = [True, True, True, True, True, True]
+
+    #retrieve player position
     playerx, playery = game_state["self"][3]
 
-    #UP
-    if (game_state["field"][playerx][playery-1] != 0):
+    bombcoords = [bomb[0] for bomb in game_state["bombs"]]
+
+    #UP -- Check for wall or crate
+    if (game_state["field"][playerx][playery-1] != 0) or ((playerx, playery-1) in bombcoords) or isdeadly(playerx,playery-1, game_state):
         validAction[0] = False
-    #RIGHT
-    if (game_state["field"][playerx+1][playery] != 0):
+    #RIGHT -- Check for wall or crate
+    if game_state["field"][playerx+1][playery] != 0 or ((playerx+1, playery) in bombcoords) or isdeadly(playerx+1,playery, game_state):
         validAction[1] = False
-    #DOWN
-    if (game_state["field"][playerx][playery+1] != 0):
+    #DOWN -- Check for wall or crate
+    if game_state["field"][playerx][playery+1] != 0 or ((playerx, playery+1) in bombcoords) or isdeadly(playerx, playery+1, game_state):
         validAction[2] = False
-    #LEFT
-    if (game_state["field"][playerx-1][playery] != 0):
+    #LEFT -- Check for wall or crate
+    if game_state["field"][playerx-1][playery] != 0 or ((playerx-1, playery) in bombcoords) or isdeadly(playerx-1, playery, game_state):
         validAction[3] = False
 
+    #Check if Bomb action is possible
     validAction[5] = game_state["self"][2]
 
     return validAction
 
+def isdeadly(x,y, game_state: dict):
+    if game_state["explosion_map"][x][y] != 0:
+        return True
+    else:
+        return False
+
 def excludeInvalidActions(game_state: dict, q_values_tensor):
     possibleList = validAction(game_state)
-    for i in range(0, len(q_values_tensor)):
-        if not possibleList[i]:
-            q_values_tensor[i] = float(-np.inf)
+    excluded_qs = T.zeros_like(q_values_tensor)
+    for idx, q in enumerate(q_values_tensor[0]):
+        if not possibleList[idx]:
+            excluded_qs[0][idx] = float(-np.inf)
+        else:
+            excluded_qs[0][idx] = q
 
-    return q_values_tensor
+    return excluded_qs
 
 def parseStep(game_state: dict) -> int:
     try:
@@ -169,56 +190,55 @@ def parseStep(game_state: dict) -> int:
         return 0
 
 
-def parseField(game_state: dict) -> np.array:
+def parseField(game_state: dict) -> T.tensor:
     try:
-        return game_state["field"]
+        return T.tensor(game_state["field"])
     except ValueError:
         print("Value error in field parser")
 
 
-def parseExplosionMap(game_state: dict) -> np.array:
+def parseExplosionMap(game_state: dict) -> T.tensor:
     try:
-        return game_state["explosion_map"]
+        return T.tensor(game_state["explosion_map"])
     except ValueError:
         print("Value error in explosion map parser")
 
 
-def parseCombinedFieldExplosionMap(game_state: dict) -> np.array:
+def parseBombs(game_state: dict) -> T.tensor:
     try:
-        return parseField(game_state) - 2 * parseExplosionMap(game_state)
-    except ValueError:
-        print("Value error in combined field and explosion map parser")
-
-
-def parseBombs(game_state: dict, featurevector) -> np.array:
-    try:
+        bomb_tensor = T.zeros(settings.COLS, settings.ROWS)
         for bomb in game_state["bombs"]:
-            featurevector[bomb[0][0]][bomb[0][1]] = -10 * bomb[1]
-
+            bomb_tensor[bomb[0][0]][bomb[0][1]] = -1 * bomb[1] - 2
+        return bomb_tensor
     except ValueError:
         print("Value Error in bomb parser")
 
 
-def parseCoins(game_state: dict, featurevector) -> np.array:
+def parseCoins(game_state: dict) -> T.tensor:
     try:
+        coin_tensor = T.zeros(settings.ROWS, settings.COLS)
         for coin in game_state["coins"]:
-            featurevector[coin[0]][coin[1]] = 10
-
+            coin_tensor[coin[0]][coin[1]] = 1
+        return coin_tensor
     except ValueError:
         print("Value Error in coin parser")
 
-def parseSelf(game_state: dict, featurevector) -> np.array:
+def parseSelf(game_state: dict) -> T.tensor:
     try:
-        featurevector[game_state["self"][3][0]][game_state["self"][3][1]] = 100 if game_state["self"][2] else -100
-
+        self_tensor = T.zeros(settings.ROWS, settings.COLS)
+        self_tensor[game_state["self"][3][0]][game_state["self"][3][1]] = 1
+        return self_tensor
     except ValueError:
         print("Error in Self parser")
 
 
-def parseOthers(game_state: dict, featurevector) -> np.array:
+def parseOthers(game_state: dict) -> T.tensor:
     try:
+        others_tensor = T.zeros(settings.ROWS, settings.COLS)
         for other in game_state["others"]:
-            featurevector[other[3][0]][other[3][1]] = 60 if game_state["self"][2] else -60
+            others_tensor[other[3][0]][other[3][1]] = -1
+
+        return others_tensor
 
     except ValueError:
         print("Value error in Others parser")
@@ -241,10 +261,18 @@ def state_to_features(game_state: dict):
     if game_state is None:
         return T.tensor([0])
 
-    featurevector = parseCombinedFieldExplosionMap(game_state)
-    parseBombs(game_state, featurevector)
-    parseCoins(game_state, featurevector)
-    parseSelf(game_state, featurevector)
-    parseOthers(game_state, featurevector)
+    #Subdividing into three object categories
+    #bombs are on the negative number spectrum and the explosion of the positive part 0 indicating no threat
+    deadly_tensor = parseExplosionMap(game_state) + parseBombs(game_state)
 
-    return T.tensor(featurevector.flatten()).float()
+    #walls crates are -1, 1 free space is 0, coins have 2
+    field_tensor = parseField(game_state)
+
+    coin_tensor = parseCoins(game_state)
+
+    #self (1) and others (2,3,4), empty is just 0
+    dynamic_tensor = parseSelf(game_state) + parseOthers(game_state)
+
+    feature_tensor = T.stack([deadly_tensor, field_tensor, coin_tensor, dynamic_tensor])
+
+    return feature_tensor.float()
