@@ -156,6 +156,8 @@ def reward_from_events(self, events: List[str]) -> int:
 
 
 def update_model(self, weights=None):
+    # todo Dimension-reduction nicht speichern in my-saved-data, nur lernen im forest etc. -
+    #  dadurch kann noch korrigiert werden falls features sich ändern.
     with open("my-saved-data.pt", "rb") as file:
         data = pickle.load(file)
     self.reduction = PCA(n_components=40)
