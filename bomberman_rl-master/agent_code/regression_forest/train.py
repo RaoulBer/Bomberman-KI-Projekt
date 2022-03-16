@@ -7,6 +7,7 @@ import events as e
 from .callbacks import state_to_features
 from .callbacks import possible_steps
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.decomposition import PCA
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -16,7 +17,7 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 20  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 10  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 LEARN_RATE = 0.1
 
@@ -68,7 +69,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # state_to_features is defined in callbacks.py
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         self.transitions.append(
-            Transition(state_to_features(old_game_state), self_action, state_to_features(new_game_state),
+            Transition(state_to_features(self, old_game_state), self_action, state_to_features(self, new_game_state),
                        reward_from_events(self, events)))
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
         y_t = construct_Y(self)
@@ -90,7 +91,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     if last_game_state is not None and last_action is not None:
         self.transitions.append(
-            Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+            Transition(state_to_features(self, last_game_state), last_action, None, reward_from_events(self, events)))
 
     # Store the model
     # todo update/write new model here :)
@@ -131,7 +132,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.WAITED: -2,
         e.CRATE_DESTROYED: 3,
         e.INVALID_ACTION: -2,
-        e.BOMB_DROPPED: -2
+        e.BOMB_DROPPED: -0.5
         #e.MOVED_LEFT: 1.5,
         #e.MOVED_RIGHT: 1.5,
         #e.MOVED_UP: 1.5,
@@ -156,20 +157,21 @@ def reward_from_events(self, events: List[str]) -> int:
 
 def update_model(self, weights=None):
     with open("my-saved-data.pt", "rb") as file:
-        data_set = pickle.load(file)
-    if not os.path.isfile("my-saved-model.pt"):  #
-        self.model = RandomForestRegressor(max_depth=300, random_state=0)
-        with open("my-saved-model.pt", "wb") as file:
-            pickle.dump(self.model, file)
+        data = pickle.load(file)
+    self.reduction = PCA(n_components=40)
+    if data.shape[0] > 40:
+        data_set = np.column_stack((self.reduction.fit_transform(data[:, :-2]), data[:, -2], data[:,:-1]))
+        with open("dimension_reduction.pt", "wb") as file:
+            pickle.dump(self.reduction, file)
+        with open("my-saved-data.pt", "wb") as file:
+            pickle.dump(data_set, file)
     else:
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
+        data_set = data
+
     if data_set.shape[0] >=800:
         data_set = data_set[np.random.choice(data_set.shape[0], 800), :]
-    else:
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
     self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
+    self.model = RandomForestRegressor(max_depth=300, random_state=0)
     self.model.fit(data_set[:, :-1], data_set[:, -1])
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
@@ -200,7 +202,10 @@ def transition_list_to_data(self, Ys):
 def construct_Y(self):
     Y = []
     for transition in self.transitions:
-        if type(self.model) != type(np.empty(1)) and transition[2] is not None and transition[0] is not None:
+        if transition[2] is None:
+            Y.append(transition[-1])
+            continue
+        elif type(self.model) != type(np.empty(1)) and transition[0] is not None:
             data = np.empty((1, transition[2].size + 1))
             data[:, :-1] = transition[0]
             data[0, -1] = ACTIONS.index(transition[1])
@@ -212,11 +217,10 @@ def construct_Y(self):
                 data2[0, -1] = i
                 ret.append(self.model.predict(data2))
             val2 = np.max(ret)
-
         else:
             val = 0
             val2 = 0
-        Y.append(transition[-1] + LEARN_RATE * val + LEARN_RATE**2 * val2)
+        Y.append(transition[-1] + LEARN_RATE * val2)
     return Y
 
 

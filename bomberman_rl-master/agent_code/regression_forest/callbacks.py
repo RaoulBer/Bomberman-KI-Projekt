@@ -37,16 +37,16 @@ def setup(self):
             self.model = pickle.load(file)
     if not self.train:
         with open("my-saved-data.pt", "rb") as file:
-            data= pickle.load(file)
+            data = pickle.load(file)
         self.model.fit(data[:,:-1], data[:,-1])
         #with open("saved_feature_reduction.pt", "rb") as file:
         #    self.feature_red = pickle.load(file)
+    if os.path.isfile("dimension_reduction.pt"):
+        with open("dimension_reduction.pt", "rb") as file:
+            self.reduction = pickle.load(file)
 
 
 def act(self, game_state: dict) -> str:
-    if game_state["step"] == 10 and game_state["round"] == 1:
-        with open("game_setup.pt", "wb") as file:
-            pickle.dump(game_state, file)
     """
     Your agent should parse the input, think, and take a decision.
     When not in training mode, the maximum execution time for this method is 0.5s.
@@ -60,7 +60,7 @@ def act(self, game_state: dict) -> str:
         self.round = game_state["step"]
         self.random_prob = self.random_prob * 0.95
 
-    game_state_use = state_to_features(game_state)
+    game_state_use = state_to_features(self, game_state)
     possible = possible_steps(feature=game_state_use, bomb = game_state['self'][2])
     if (self.train and random.random() < self.random_prob) or not os.path.isfile("my-saved-model.pt"):
         self.logger.debug("Choosing action purely at random.")
@@ -70,7 +70,7 @@ def act(self, game_state: dict) -> str:
 
     #feature_state = self.feature_red(game_state_use)
     data = np.empty((1, game_state_use.size + 1))
-    data[:, :-1] = game_state_use
+    data[0, :-1] = game_state_use
     max = -1000
     for i in possible:
         data[0, -1] = i
@@ -81,7 +81,7 @@ def act(self, game_state: dict) -> str:
     return ACTIONS[response]
 
 
-def state_to_features(game_state: dict) -> np.array:
+def state_to_features(self, game_state: dict) -> np.array:
     """
     :param game_state:  A dictionary describing the current game board.
     :return: np.array
@@ -113,7 +113,7 @@ def state_to_features(game_state: dict) -> np.array:
     others = game_state["others"].sort(key=lambda x: (s0-x[-1][0])**2 + (s1-x[-1][1])**2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i,:] = np.array([s0-bomb[0][0], s1-bomb[0][1], bomb[1]])
+            bombs[i, :] = np.array([s0-bomb[0][0], s1-bomb[0][1], bomb[1]])
     if others is not None:
         for i, other in enumerate(others):
             if other is None:
@@ -121,7 +121,7 @@ def state_to_features(game_state: dict) -> np.array:
             if other[2]:
                 players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], -5])
             else:
-                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], other[1]])
+                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], 3])
 
     c = game_state["coins"].sort(key=lambda x: (s0-x[0])**2 + (s1-x[1])**2)
     if c is not None:
@@ -134,6 +134,8 @@ def state_to_features(game_state: dict) -> np.array:
     players = players.reshape(12, 1)
     coins = coins.reshape(6, 1)
     out = np.concatenate((features, players, bombs, coins), axis=0).T
+    if os.path.isfile("dimension_reduction.pt"):
+        out = self.reduction.transform(out)
     assert out.shape[0] == 1
     return out
 
