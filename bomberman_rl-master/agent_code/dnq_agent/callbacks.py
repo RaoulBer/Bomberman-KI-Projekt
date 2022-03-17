@@ -24,11 +24,12 @@ epsilon_min = 0.10
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.90
-learning_rate = 0.0001
-fc1Dim = 512
-fc2Dim = 256
-kernel_size = 5
+learning_rate = 0.1
+fc1Dim = 64
+fc2Dim = 32
+kernel_size = 3
 input_channels = 4 #how many feature maps in nn (static, dynamic, deadly)=3
+
 
 class Model(nn.Module):
     def __init__(self, lr, input_channels, kernel_size, fc1_dims, fc2_dims,
@@ -39,15 +40,19 @@ class Model(nn.Module):
         self.kernel_size = kernel_size
         assert self.kernel_size % 2 != 0, "Kernel size has to be an odd integer"
         self.conv_output_dims = (17 - 2*(self.kernel_size - 1))**2
-        self.fc_input_dims = 1296
+        self.fc_input_dims = 144
         self.n_actions = n_actions
         self.input_channels = input_channels
 
         self.conv1 = nn.Conv2d(self.input_channels, 2 * self.input_channels, self.kernel_size)
-        self.pool = nn.MaxPool2d(2, 2)
+        self.pool = nn.MaxPool2d(2, 2, ceil_mode=True)
+        self.bn2d1 = nn.BatchNorm2d(2*self.input_channels)
         self.conv2 = nn.Conv2d(2 * input_channels, 4 * input_channels, self.kernel_size)
+        self.bn2d2 = nn.BatchNorm2d(4*self.input_channels)
         self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
+        #self.bn1d1 = nn.BatchNorm1d(fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
+        #self.bn1d2 = nn.BatchNorm1d(fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
@@ -55,10 +60,13 @@ class Model(nn.Module):
         self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
         self.to(self.device)
 
+
     def forward(self, state):
-        x = F.relu(self.conv1(state))
-        x = F.relu(self.conv2(x))
-        x = x.view(-1, 1296)
+        x = F.relu(self.bn2d1(self.conv1(state)))
+        x = self.pool(x)
+        x = F.relu(self.bn2d2(self.conv2(x)))
+        x = self.pool(x)
+        x = x.reshape(-1, 3*3*16)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         actions = self.fc3(x)
@@ -119,10 +127,10 @@ def act(self, game_state: dict) -> str:
         #self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         #ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-        valids = validAction(game_state)
-        possible_actions = [a for idx, a in enumerate(ACTIONS) if valids[idx]]
-        action_chosen = np.random.choice(possible_actions)
-        print("Action:", action_chosen)
+        #valids = validAction(game_state)
+        #possible_actions = [a for idx, a in enumerate(ACTIONS) if valids[idx]]
+        action_chosen = np.random.choice(ACTIONS)
+        #print("Action:", action_chosen)
         return action_chosen
 
     #self.logger.debug("Querying model for action.")
@@ -133,10 +141,12 @@ def act(self, game_state: dict) -> str:
     print("prediction of q values: ", self.model.forward(inputvec))
     """
     valids = validAction(game_state)
-    predicted_q_values = self.model.forward(state_to_features(game_state))
-    excluded_q_values = excludeInvalidActions(game_state, predicted_q_values)
+    self.model.train(mode=False)
+    self.model.eval()
+    predicted_q_values = self.model.forward(state_to_features(game_state)[None])
+    excluded_q_values = predicted_q_values #excludeInvalidActions(game_state, predicted_q_values)
     action_chosen = ACTIONS[T.argmax(excluded_q_values)]
-    print("Action: ", action_chosen)
+    #print("Action: ", action_chosen)
 
     return action_chosen
 
@@ -149,16 +159,16 @@ def validAction(game_state: dict):
     bombcoords = [bomb[0] for bomb in game_state["bombs"]]
 
     #UP -- Check for wall or crate
-    if (game_state["field"][playerx][playery-1] != 0) or ((playerx, playery-1) in bombcoords) or isdeadly(playerx,playery-1, game_state):
+    if (game_state["field"][playerx][playery-1] != 0) or isdeadly(playerx,playery-1, game_state):
         validAction[0] = False
     #RIGHT -- Check for wall or crate
-    if game_state["field"][playerx+1][playery] != 0 or ((playerx+1, playery) in bombcoords) or isdeadly(playerx+1,playery, game_state):
+    if game_state["field"][playerx+1][playery] != 0  or isdeadly(playerx+1,playery, game_state):
         validAction[1] = False
     #DOWN -- Check for wall or crate
-    if game_state["field"][playerx][playery+1] != 0 or ((playerx, playery+1) in bombcoords) or isdeadly(playerx, playery+1, game_state):
+    if game_state["field"][playerx][playery+1] != 0 or isdeadly(playerx, playery+1, game_state):
         validAction[2] = False
     #LEFT -- Check for wall or crate
-    if game_state["field"][playerx-1][playery] != 0 or ((playerx-1, playery) in bombcoords) or isdeadly(playerx-1, playery, game_state):
+    if game_state["field"][playerx-1][playery] != 0 or isdeadly(playerx-1, playery, game_state):
         validAction[3] = False
 
     #Check if Bomb action is possible
@@ -208,7 +218,7 @@ def parseBombs(game_state: dict) -> T.tensor:
     try:
         bomb_tensor = T.zeros(settings.COLS, settings.ROWS)
         for bomb in game_state["bombs"]:
-            bomb_tensor[bomb[0][0]][bomb[0][1]] = -1 * bomb[1] - 2
+            bomb_tensor[bomb[0][0]][bomb[0][1]] = (-1 * bomb[1] - 2)
         return bomb_tensor
     except ValueError:
         print("Value Error in bomb parser")

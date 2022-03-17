@@ -6,9 +6,12 @@ import random
 from typing import List
 import os
 
+from torchinfo import summary
+
 import events as e
 import settings
 from . import callbacks
+import torch.optim as optim
 
 import torch as T
 
@@ -31,6 +34,7 @@ training_verbosity = 0
 
 ROUNDS = 0
 
+
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -52,6 +56,8 @@ def setup_training(self):
     self.gamma = callbacks.gamma
     self.batch_size = batch_size
     self.mem_size = TRANSITION_HISTORY_SIZE
+    self.scheduler = optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lr_lambda=lambda x: 0.9999769744141629,
+                                                    verbose=True)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     #remember
@@ -124,6 +130,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     else:
         self.model.optimizer.zero_grad()
+        self.model.train(mode=True)     #For Batch normalization and pooling layers
 
         max_mem = min(self.MEMORY_ITERATOR, self.mem_size)
 
@@ -148,6 +155,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         loss = self.model.loss(target, evaled).to(self.model.device)
         loss.backward()
         self.model.optimizer.step()
+        self.scheduler.step()
         #To raise an error if the gradient is null somewhere
         T.autograd.set_detect_anomaly(True)
 
@@ -159,6 +167,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         if self.ITERATION_COUNTER % 100 == 0:
             T.save(self.model, "model.pt")
+            print(summary(self.model,[64,4,17,17],depth=4))
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -181,7 +190,7 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-        if e.INVALID_ACTION:
-            print("Invalid")
+        #if e.INVALID_ACTION:
+         #   print("Invalid")
     #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
