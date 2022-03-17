@@ -159,24 +159,21 @@ def update_model(self, weights=None):
     # todo Dimension-reduction nicht speichern in my-saved-data, nur lernen im forest etc. -
     #  dadurch kann noch korrigiert werden falls features sich ändern.
     with open("my-saved-data.pt", "rb") as file:
-        data = pickle.load(file)
+        data_set = pickle.load(file)
     self.reduction = PCA(n_components=40)
-    if data.shape[0] > 40:
-        data_set = np.column_stack((self.reduction.fit_transform(data[:, :-2]), data[:, -2], data[:,:-1]))
-        with open("dimension_reduction.pt", "wb") as file:
-            pickle.dump(self.reduction, file)
-        with open("my-saved-data.pt", "wb") as file:
-            pickle.dump(data_set, file)
-    else:
-        data_set = data
-
-    if data_set.shape[0] >=800:
-        data_set = data_set[np.random.choice(data_set.shape[0], 800), :]
-    self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
     self.model = RandomForestRegressor(max_depth=300, random_state=0)
-    self.model.fit(data_set[:, :-1], data_set[:, -1])
+    if data_set.shape[0] >=800:
+        self.reduction.fit(data_set[:, :-1])
+        self.reduce = True
+        data_set = data_set[np.random.choice(data_set.shape[0], 800), :]
+        self.model.fit(self.reduction.transform(data_set[:, :-1]), data_set[:, -1])
+    else:
+        self.model.fit(data_set[:, :-1], data_set[:, -1])
+    self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
+    with open("dimension_reduction.pt", "wb") as file:
+        pickle.dump(self.reduction, file)
 
 
 def transition_list_to_data(self, Ys):

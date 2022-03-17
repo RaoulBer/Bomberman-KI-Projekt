@@ -27,7 +27,7 @@ def setup(self):
     self.round = 1
     self.random_prob = 0.3
 
-    if self.train and not os.path.isfile("my-saved-model.pt"):
+    if not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         weights = np.random.rand(len(ACTIONS))
         self.model = weights / weights.sum()
@@ -44,6 +44,11 @@ def setup(self):
     if os.path.isfile("dimension_reduction.pt"):
         with open("dimension_reduction.pt", "rb") as file:
             self.reduction = pickle.load(file)
+    if self.train:
+        self.reduce = False
+
+
+
 
 
 def act(self, game_state: dict) -> str:
@@ -74,6 +79,8 @@ def act(self, game_state: dict) -> str:
     max = -1000
     for i in possible:
         data[0, -1] = i
+        if self.reduce:
+            data = self.reduction.transform(data)
         mod = self.model.predict(data)
         if mod > max:
             max = mod
@@ -134,8 +141,6 @@ def state_to_features(self, game_state: dict) -> np.array:
     players = players.reshape(12, 1)
     coins = coins.reshape(6, 1)
     out = np.concatenate((features, players, bombs, coins), axis=0).T
-    if os.path.isfile("dimension_reduction.pt"):
-        out = self.reduction.transform(out)
     assert out.shape[0] == 1
     return out
 
