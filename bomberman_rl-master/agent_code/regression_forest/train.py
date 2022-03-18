@@ -184,8 +184,7 @@ def transition_list_to_data(self, Ys):
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
-        array[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] = \
-            array[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] * ACTIONS.index(transition[1])
+        array = make_dependencies(array, action=ACTIONS.index(transition[1]))
     array = np.nan_to_num(array, copy=True)
     if not os.path.isfile("my-saved-data.pt"):
         with open("my-saved-data.pt", "wb") as file:
@@ -214,7 +213,10 @@ def construct_Y(self):
             ret = []
             for i in possible_steps(feature = transition[2], bomb = True):
                 data2[0, -1] = i
-                ret.append(self.model.predict(make_dependencies(data2, i)))
+                if not self.reduce:
+                    ret.append(self.model.predict(make_dependencies(data2, i)))
+                else:
+                    ret.append(self.model.predict(self.reduction.transform(make_dependencies(data2, i))))
             val2 = np.max(ret)
         else:
             val = 0
