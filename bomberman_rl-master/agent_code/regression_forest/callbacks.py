@@ -79,6 +79,7 @@ def act(self, game_state: dict) -> str:
     max = -1000
     for i in possible:
         data[0, -1] = i
+        data = make_dependencies(data, i)
         if self.reduce:
             data = self.reduction.transform(data)
         mod = self.model.predict(data)
@@ -99,13 +100,13 @@ def state_to_features(self, game_state: dict) -> np.array:
 
     *_, (s0, s1) = game_state["self"]
     features = np.zeros((4 + 48, 1))
+    bombs = np.zeros((4, 5))
+    coins = np.zeros((3, 4))
+    players = np.zeros((3, 5))
     features[0] = game_state["round"]
-    features[1] = game_state["step"]
+    features[1] = np.floor(game_state["step"]/100)
     features[2] = s0
     features[3] = s1
-    bombs = np.zeros((4, 3))
-    coins = np.zeros((3, 2))
-    players = np.zeros((4, 3))
     field = game_state["field"]
     mask2 = np.ones(shape=field.shape, dtype=bool)
     mask1 = np.zeros(shape=field.shape, dtype=bool)
@@ -116,33 +117,41 @@ def state_to_features(self, game_state: dict) -> np.array:
     field = field[(mask1).nonzero()]
     expl_crates = - expl_crates[(mask2).nonzero()] + field[(mask2).nonzero()]
     features[4:expl_crates.size+4, 0] = 3 * expl_crates.flatten()
-    b = game_state["bombs"].sort(key=lambda x: (s0-x[0][0])**2 + (s1-x[0][1])**2)
-    others = game_state["others"].sort(key=lambda x: (s0-x[-1][0])**2 + (s1-x[-1][1])**2)
+    b = sorted(game_state["bombs"], key=lambda x: (s0-x[0][0])**2 + (s1-x[0][1])**2)
+    others = sorted(game_state["others"], key=lambda x: (s0-x[-1][0])**2 + (s1-x[-1][1])**2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i, :] = np.array([s0-bomb[0][0], s1-bomb[0][1], bomb[1]])
+            #bombs[i, :] = np.array([s0-bomb[0][0], s1-bomb[0][1], bomb[1], s0-bomb[0][0], s1-bomb[0][1]])
+            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], bomb[1], 98, 98])
     if others is not None:
         for i, other in enumerate(others):
             if other is None:
                 break
             if other[2]:
-                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], -5])
+                #players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], -1, s0-other[-1][0], s1-other[-1][1]])
+                players[i, :] = np.array([s0 - other[-1][0], s1 - other[-1][1], -1, -99, -99])
             else:
-                players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], 3])
+                #players[i, :] = np.array([s0-other[-1][0], s1-other[-1][1], 1, s0-other[-1][0], s1-other[-1][1]])
+                players[i, :] = np.array([s0 - other[-1][0], s1 - other[-1][1], 1, -99, -99])
 
-    c = game_state["coins"].sort(key=lambda x: (s0-x[0])**2 + (s1-x[1])**2)
+    c = sorted(game_state["coins"], key=lambda x: (s0-x[0])**2 + (s1-x[1])**2)
     if c is not None:
         for i, coin in enumerate(c):
             if coin is None or i == 3:
                 break
-            coins[i, :] = np.array([s0-coin[0], s1-coin[1]])
+            #coins[i, :] = np.array([s0-coin[0], s1-coin[1], s0-coin[0], s1-coin[1]])
+            coins[i,:] = np.array([s0-coin[0], s1-coin[1], 99, 99])
 
-    bombs = bombs.reshape(12, 1)
-    players = players.reshape(12, 1)
-    coins = coins.reshape(6, 1)
+    bombs = bombs.reshape(20, 1)
+    players = players.reshape(15, 1)
+    coins = coins.reshape(12, 1)
     out = np.concatenate((features, players, bombs, coins), axis=0).T
     assert out.shape[0] == 1
     return out
+
+#Duplicates: Others: 55, 56, 60, 61, 65, 66
+#Duplicates: Bombs: 70, 71, 75, 76, 80, 81
+#Duplicates: Coins: 89, 90, 93, 94, 97, 98
 
 def possible_steps(feature, bomb = True):
     actions = [4]
@@ -181,13 +190,8 @@ def return_distro(actions):
     return out
 
 
-def make_dependencies(data):
-    extension = np.zeros(shape=(data.shape[0], 10))
-    # Coin-Relation (Three coins)
-    for i in range(3):
-        extension[:, data[:, -1]+(i*3)] = np.norm(data[:, (-8+2*i):(-6+2*i)])
-    for i in range(4):
-        extension[:, data[:, -1]+(i*3)] = np.norm(data[:, (-18+3*i):(-15+3*i)])
-    return np.concatenate((data, extension))
-
-    ... # Todo für jede Handlung multiplikative Elemente einfügen
+def make_dependencies(data, action):
+    for i in range(data.shape[0]):
+        data[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] = \
+            data[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] * action
+    return data

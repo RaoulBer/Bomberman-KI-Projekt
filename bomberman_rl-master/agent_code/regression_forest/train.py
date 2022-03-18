@@ -8,6 +8,7 @@ from .callbacks import state_to_features
 from .callbacks import possible_steps
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.decomposition import PCA
+from .callbacks import make_dependencies
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -100,12 +101,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     with open("my-saved-data.pt", "rb") as file:
         array = pickle.load(file)
-
     output_data = unique(array)
-
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(output_data, file)
-
 
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
@@ -186,6 +184,8 @@ def transition_list_to_data(self, Ys):
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
+        array[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] = \
+            array[i, [55, 56, 60, 61, 65, 66, 70, 71, 75, 76, 80, 81, 89, 90, 93, 94, 97, 98]] * ACTIONS.index(transition[1])
     array = np.nan_to_num(array, copy=True)
     if not os.path.isfile("my-saved-data.pt"):
         with open("my-saved-data.pt", "wb") as file:
@@ -206,15 +206,15 @@ def construct_Y(self):
             continue
         elif type(self.model) != type(np.empty(1)) and transition[0] is not None:
             data = np.empty((1, transition[2].size + 1))
-            data[:, :-1] = transition[0]
+            data[:, :-1] = make_dependencies(transition[0], ACTIONS.index(transition[1]))
             data[0, -1] = ACTIONS.index(transition[1])
             data2 = np.empty((1, transition[2].size + 1))
             data2[0,:-1] = transition[2]
-            val = self.model.predict(data)
+            #val = self.model.predict(data)
             ret = []
             for i in possible_steps(feature = transition[2], bomb = True):
                 data2[0, -1] = i
-                ret.append(self.model.predict(data2))
+                ret.append(self.model.predict(make_dependencies(data2, i)))
             val2 = np.max(ret)
         else:
             val = 0
