@@ -18,9 +18,9 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 10  # keep only ... last transitions
-RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-LEARN_RATE = 0.1
+TRANSITION_HISTORY_SIZE = 15  # keep only ... last transitions
+#RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
+LEARN_RATE = 0.4
 
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
@@ -35,32 +35,18 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-    if os.path.isfile("my-saved-model.pt"):
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
-    """
-    Called once per step to allow intermediate rewards based on game events.
-    When this method is called, self.events will contain a list of all game
-    events relevant to your agent that occurred during the previous step. Consult
-    settings.py to see what events are tracked. You can hand out rewards to your
-    agent based on these events and your knowledge of the (new) game state.
-    This is *one* of the places where you could update your agent.
-    :param self: This object is passed to all callbacks and you can set arbitrary values.
-    :param old_game_state: The state that was passed to the last call of `act`.
-    :param self_action: The action that you took.
-    :param new_game_state: The state the agent is in now.
-    :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
-    """
+
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     # Idea: Add your own events to hand out rewards
-    if ...:
+    if False:
         events.append(PLACEHOLDER_EVENT)
+
     with open("rewards.pt", "rb") as file:
         re = pickle.load(file)
     re.append(measure_performance(self, events))
@@ -98,15 +84,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     # todo update/write new model here :)
     y_t = construct_Y(self)
     transition_list_to_data(self, Ys=y_t)
-
-    with open("my-saved-data.pt", "rb") as file:
-        array = pickle.load(file)
-    output_data = unique(array)
-    with open("my-saved-data.pt", "wb") as file:
-        pickle.dump(output_data, file)
-
+    self.data = unique(self.data)
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    with open("my-saved-data.pt", "wb") as file:
+        pickle.dump(self.data, file)
+    with open("my-saved-model.pt", "wb") as file:
+        pickle.dump(self.model, file)
 
 def unique(a):
     order = np.lexsort(a.T)
@@ -156,22 +140,22 @@ def reward_from_events(self, events: List[str]) -> int:
 def update_model(self, weights=None):
     # todo Dimension-reduction nicht speichern in my-saved-data, nur lernen im forest etc. -
     #  dadurch kann noch korrigiert werden falls features sich ändern.
-    with open("my-saved-data.pt", "rb") as file:
-        data_set = pickle.load(file)
-    self.reduction = PCA(n_components=40)
-    self.model = RandomForestRegressor(max_depth=300, random_state=0)
-    if data_set.shape[0] >=800:
-        self.reduction.fit(data_set[:, :-1])
-        self.reduce = True
-        data_set = data_set[np.random.choice(data_set.shape[0], 800), :]
-        self.model.fit(self.reduction.transform(data_set[:, :-1]), data_set[:, -1])
-    else:
-        self.model.fit(data_set[:, :-1], data_set[:, -1])
-    self.logger.info(f"Trained with a data-set of this size: {data_set.shape}")
-    with open("my-saved-model.pt", "wb") as file:
-        pickle.dump(self.model, file)
-    with open("dimension_reduction.pt", "wb") as file:
-        pickle.dump(self.reduction, file)
+    # todo generate new Y each round
+    self.model = MyModel()
+    self.model.train(self.data)
+    update_y(self)
+
+
+def update_y(self):
+    Y = calculate_y(self)
+    self.data[:, -1] = Y
+
+
+def calculate_y(self):
+    proposition = self.model.predict(self.data[:, :-1])
+    y = self.rewards + LEARN_RATE * proposition
+    assert y.shape == self.data[:, -1].shape
+    return y
 
 
 def transition_list_to_data(self, Ys):
@@ -186,16 +170,8 @@ def transition_list_to_data(self, Ys):
         array[i, -2] = ACTIONS.index(transition[1])
         array = make_dependencies(array, action=ACTIONS.index(transition[1]))
     array = np.nan_to_num(array, copy=True)
-    if not os.path.isfile("my-saved-data.pt"):
-        with open("my-saved-data.pt", "wb") as file:
-            pickle.dump(array, file)
-    else:
-        with open("my-saved-data.pt", "rb") as file:
-            data_set = pickle.load(file)
-        data_set = np.concatenate((data_set, array))
-        with open("my-saved-data.pt", "wb") as file:
-            pickle.dump(data_set, file)
-    return array
+    self.data = np.concatenate((self.data, array))
+
 
 def construct_Y(self):
     Y = []
@@ -244,3 +220,24 @@ def measure_performance(self, events: List[str]):
         return 0
     return reward_sum
 
+class MyModel:
+    def __init__(self):
+        self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+        self.reduction = False
+
+    def predict(self, instance):
+        if self.reduction:
+            return self.forest.predict(self.reduction.transform(instance))
+        else:
+            return self.forest.predict(instance)
+
+    def train(self, data):
+        try:
+            self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+            self.reduction = PCA(n_components=40)
+            self.reduction.fit(data[:, :-1], y=data[:, -1])
+            self.forest.fit(self.reduction.transform(data[:, :-1]), data[:, -1])
+        except:
+            self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+            self.forest.fit(data[:, :-1], data[:, -1])
+            self.reduction = False

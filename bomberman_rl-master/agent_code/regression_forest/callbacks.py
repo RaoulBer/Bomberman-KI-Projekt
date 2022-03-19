@@ -23,27 +23,18 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 0.3
+    self.random_prob = 1
 
-    if not os.path.isfile("my-saved-model.pt"):
-        self.logger.info("Setting up model from scratch.")
-        weights = np.random.rand(len(ACTIONS))
-        self.model = weights / weights.sum()
-    else:
-        self.logger.info("Loading model from saved state.")
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
-    if not self.train:
-        with open("my-saved-data.pt", "rb") as file:
-            data = pickle.load(file)
-        self.model.fit(data[:, :-1], data[:, -1])
-        # with open("saved_feature_reduction.pt", "rb") as file:
-        #    self.feature_red = pickle.load(file)
-    if os.path.isfile("dimension_reduction.pt"):
-        with open("dimension_reduction.pt", "rb") as file:
-            self.reduction = pickle.load(file)
     if self.train:
-        self.reduce = False
+        self.model = False
+        if os.path.isfile("my-saved-data.pt"):
+            with open("my-saved-data.pt") as file:
+                self.data = pickle.load(file)
+        else:
+            self.data = False
+    else:
+        with open("my-saved-model.pt") as file:
+            self.model = pickle.load(file)
 
 
 def act(self, game_state: dict) -> str:
@@ -57,26 +48,25 @@ def act(self, game_state: dict) -> str:
     """
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
-        self.round = game_state["step"]
-        self.random_prob = self.random_prob * 0.95
+        self.round = game_state["round"]
+        self.random_prob = self.random_prob * 0.88 + 0.01
+        print(self.random_prob)
 
     game_state_use = state_to_features(self, game_state)
     possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
-    if (self.train and random.random() < self.random_prob) or not os.path.isfile("my-saved-model.pt"):
+    if (self.train and random.random() < self.random_prob) or not self.model:
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
     self.logger.debug("Querying model for action.")
 
     highest_known = -1000
-    response = 4  # Standart: Wait
+    response = 4  # Standard: Wait
     for i in possible:
         data = np.empty((1, game_state_use.size + 1))
-        data[0,:-1] = game_state_use
+        data[0, :-1] = game_state_use
         data[0, -1] = i
         data = make_dependencies(data, i)
-        if self.reduce:
-            data = self.reduction.transform(data)
         mod = self.model.predict(data)
         if mod > highest_known:
             highest_known = mod
@@ -90,6 +80,9 @@ def state_to_features(self, game_state: dict) -> np.array:
     :param game_state:  A dictionary describing the current game board.
     :return: np.array
     """
+
+    # todo: Funktionale Programmierung implementieren.
+
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
