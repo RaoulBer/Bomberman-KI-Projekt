@@ -53,7 +53,6 @@ def act(self, game_state: dict) -> str:
     if game_state["round"] != self.round:
         self.round = game_state["round"]
         self.random_prob = self.random_prob * 0.88 + 0.01
-        print(self.random_prob)
 
     game_state_use = state_to_features(self, game_state)
     possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])

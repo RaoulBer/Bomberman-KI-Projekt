@@ -10,7 +10,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.decomposition import PCA
 from .callbacks import make_dependencies
 
-
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 # This is only an example!
@@ -19,11 +18,14 @@ Transition = namedtuple('Transition',
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 15  # keep only ... last transitions
-#RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-LEARN_RATE = 0.4
+# RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
 # Events
 PLACEHOLDER_EVENT = "PLACEHOLDER"
+GOLDSEARCH = "GOLDSEARCH"
+ENEMYINLINE = "ENEMYINLINE"
+BOMBTHREAD = "BOMBTHREAT"
+GOLDRUSH = "GOLDRUSH"
 
 
 def setup_training(self):
@@ -37,15 +39,13 @@ def setup_training(self):
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
+    self.LEARN_RATE = 0.2
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
-
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     # Idea: Add your own events to hand out rewards
-    if False:
-        events.append(PLACEHOLDER_EVENT)
 
     with open("rewards.pt", "rb") as file:
         re = pickle.load(file)
@@ -55,9 +55,18 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     # state_to_features is defined in callbacks.py
     if old_game_state is not None and new_game_state is not None and self_action is not None:
+        if way_to_go(state_to_features(self, old_game_state), state_to_features(self, new_game_state)):
+            events.append(GOLDSEARCH)
+        #if face_opponent(state_to_features(self, new_game_state)):
+        #    events.append(ENEMYINLINE)
+        if in_bombs_way(state_to_features(self, new_game_state)):
+            events.append(BOMBTHREAD)
+        if way_to_go2(state_to_features(self, new_game_state)):
+            events.append(GOLDRUSH)
         self.transitions.append(
             Transition(state_to_features(self, old_game_state), self_action, state_to_features(self, new_game_state),
                        reward_from_events(self, events)))
+
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
         y_t = construct_Y(self)
         transition_list_to_data(self, Ys=y_t)
@@ -91,6 +100,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
+    self.LEARN_RATE = self.LEARN_RATE * 0.95 + 0.03
+
+
+
 '''
 def unique(a):
     order = np.lexsort(a.T)
@@ -118,7 +131,7 @@ def update_y(self):
 
 def calculate_y(self):
     proposition = self.model.predict(self.data[:, :-1])
-    y = self.rewards + LEARN_RATE * proposition
+    y = self.rewards + self.LEARN_RATE * proposition
     assert y.shape == self.data[:, -1].shape
     return y
 
@@ -163,7 +176,7 @@ def construct_Y(self):
             val = np.max(ret)
         else:
             val = 0
-        Y.append(transition[-1] + LEARN_RATE * val)
+        Y.append(transition[-1] + self.LEARN_RATE * val)
     return Y
 
 
@@ -186,6 +199,7 @@ def measure_performance(self, events: List[str]):
         return 0
     return reward_sum
 
+
 class MyModel:
     def __init__(self):
         self.forest = RandomForestRegressor(max_depth=300, random_state=0)
@@ -196,8 +210,8 @@ class MyModel:
 
     def train(self, data):
         self.forest = RandomForestRegressor(max_depth=300, random_state=0)
-        if data.shape[0] >= 800:
-            data = data[np.random.choice(data.shape[0], 800), :]
+        if data.shape[0] >= 1600:
+            data = data[np.random.choice(data.shape[0], 1600), :]
         self.forest.fit(data[:, :-1], data[:, -1])
 
         """
@@ -213,6 +227,7 @@ class MyModel:
         except ValueError:
         """
 
+
 def reward_from_events(self, events: List[str]) -> int:
     """
     *This is not a required function, but an idea to structure your code.*
@@ -220,32 +235,67 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 3,
-        e.KILLED_OPPONENT: 5,
-        e.GOT_KILLED: -10,
+        e.COIN_COLLECTED: 10,
+        e.KILLED_OPPONENT: 10,
+        e.GOT_KILLED: -5,
         e.KILLED_SELF: 3,
-        e.WAITED: -2,
+        e.WAITED: -1,
         e.CRATE_DESTROYED: 3,
         e.INVALID_ACTION: -2,
         e.BOMB_DROPPED: -0.5,
-        e.SURVIVED_ROUND: 5
-        #e.MOVED_LEFT: 1.5,
-        #e.MOVED_RIGHT: 1.5,
-        #e.MOVED_UP: 1.5,
-        #e.MOVED_DOWN: 1.5
+        e.SURVIVED_ROUND: 5,
+        e.BOMBTHREAD: -8,
+        e.GOLDSEARCH: 5,
+        e.ENEMYINLINE: 1,
+        e.GOLDRUSH: 2
+        # e.MOVED_LEFT: 1.5,
+        # e.MOVED_RIGHT: 1.5,
+        # e.MOVED_UP: 1.5,
+        # e.MOVED_DOWN: 1.5
         # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    #if self.transitions:
+    # if self.transitions:
     #    reward_sum += self.transitions[-1][-2][:,1] * 0.1
     if len(self.transitions) > 3:
         if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
-            reward_sum -= 5
+            reward_sum -= 2
             self.logger.info(f"Punished repeated action")
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
     return reward_sum
+
+
+def in_bombs_way(next):
+    if (next[0, 55] == 0 or next[0, 56] == 0) and (next[0, 55] < 3 or next[0, 56] < 3):
+        return True
+    else:
+        return False
+
+
+def way_to_go(last_state, next_state):
+    coins_next = next_state[0, -12::2].reshape(2, 3)
+    coins_last = last_state[0, -12::2].reshape(2, 3)
+    if np.sum(np.linalg.norm(coins_last, axis=0)[0]) > np.sum(np.linalg.norm(coins_next, axis=0)[0]):
+        return True
+    else:
+        return False
+
+
+def way_to_go2(next_state):
+    if (next_state[0, -12] == 0 or next_state[0, -11] == 0) and (next_state[0, -12] < 3 or next_state[0, -11] < 3) \
+            and (next_state[0, -12] != next_state[0, -11]).any() :
+        return True
+    else:
+        return False
+
+
+def face_opponent(next_state):
+    if (next_state[0, 70] == 0 or next_state[0, 71] == 0) and (next_state[0, 70] < 3 or next_state[0, 71] < 3):
+        return True
+    else:
+        return False
