@@ -81,17 +81,17 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             Transition(state_to_features(self, last_game_state), last_action, None, reward_from_events(self, events)))
 
     # Store the model
-    # todo update/write new model here :)
     y_t = construct_Y(self)
     transition_list_to_data(self, Ys=y_t)
-    self.data = unique(self.data)
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
     with open("my-saved-model.pt", "wb") as file:
         pickle.dump(self.model, file)
-
+    with open("my-saved-rewards.pt", "wb") as file:
+        pickle.dump(self.rewards, file)
+'''
 def unique(a):
     order = np.lexsort(a.T)
     a = a[order]
@@ -99,42 +99,7 @@ def unique(a):
     ui = np.ones(len(a), 'bool')
     ui[1:] = (diff != 0).any(axis=1)
     return a[ui]
-
-def reward_from_events(self, events: List[str]) -> int:
-    """
-    *This is not a required function, but an idea to structure your code.*
-    Here you can modify the rewards your agent get so as to en/discourage
-    certain behavior.
-    """
-    game_rewards = {
-        e.COIN_COLLECTED: 5,
-        e.KILLED_OPPONENT: 5,
-        e.GOT_KILLED: -10,
-        e.KILLED_SELF: -8,
-        e.WAITED: -2,
-        e.CRATE_DESTROYED: 3,
-        e.INVALID_ACTION: -2,
-        e.BOMB_DROPPED: -0.5
-        #e.MOVED_LEFT: 1.5,
-        #e.MOVED_RIGHT: 1.5,
-        #e.MOVED_UP: 1.5,
-        #e.MOVED_DOWN: 1.5
-        # idea: the custom event is bad
-    }
-    reward_sum = 0
-    for event in events:
-        if event in game_rewards:
-            reward_sum += game_rewards[event]
-    #if self.transitions:
-    #    reward_sum += self.transitions[-1][-2][:,1] * 0.1
-    if len(self.transitions) > 3:
-        if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
-            reward_sum -= 5
-            self.logger.info(f"Punished repeated action")
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
-    if reward_sum is None:
-        return 0
-    return reward_sum
+'''
 
 
 def update_model(self, weights=None):
@@ -163,14 +128,23 @@ def transition_list_to_data(self, Ys):
     assert len(Ys) == length
     array = np.empty((length, self.transitions[1][0].size + 2))
     array[:, -1] = Ys
+    rewards = np.empty(length)
     for i, transition in enumerate(self.transitions):
         if transition[1] is None or transition[0] is None:
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
         array = make_dependencies(array, action=ACTIONS.index(transition[1]))
+        rewards[i] = transition[-1]
     array = np.nan_to_num(array, copy=True)
-    self.data = np.concatenate((self.data, array))
+    try:
+        self.data = np.concatenate((self.data, array))
+    except ValueError:
+        self.data = array
+    try:
+        self.rewards = np.concatenate((self.rewards, rewards))
+    except ValueError:
+        self.rewards = rewards
 
 
 def construct_Y(self):
@@ -179,25 +153,17 @@ def construct_Y(self):
         if transition[2] is None:
             Y.append(transition[-1])
             continue
-        elif type(self.model) != type(np.empty(1)) and transition[0] is not None:
+        elif self.model:
             data = np.empty((1, transition[2].size + 1))
-            data[:, :-1] = make_dependencies(transition[0], ACTIONS.index(transition[1]))
-            data[0, -1] = ACTIONS.index(transition[1])
-            data2 = np.empty((1, transition[2].size + 1))
-            data2[0,:-1] = transition[2]
-            #val = self.model.predict(data)
+            data[0, :-1] = transition[2]
             ret = []
-            for i in possible_steps(feature = transition[2], bomb = True):
-                data2[0, -1] = i
-                if not self.reduce:
-                    ret.append(self.model.predict(make_dependencies(data2, i)))
-                else:
-                    ret.append(self.model.predict(self.reduction.transform(make_dependencies(data2, i))))
-            val2 = np.max(ret)
+            for i in possible_steps(feature=transition[2], bomb=True):
+                data[0, -1] = i
+                ret.append(self.model.predict(make_dependencies(data, i)))
+            val = np.max(ret)
         else:
             val = 0
-            val2 = 0
-        Y.append(transition[-1] + LEARN_RATE * val2)
+        Y.append(transition[-1] + LEARN_RATE * val)
     return Y
 
 
@@ -226,18 +192,60 @@ class MyModel:
         self.reduction = False
 
     def predict(self, instance):
+        return self.forest.predict(instance)
+
+    def train(self, data):
+        self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+        if data.shape[0] >= 800:
+            data = data[np.random.choice(data.shape[0], 800), :]
+        self.forest.fit(data[:, :-1], data[:, -1])
+
+        """
         if self.reduction:
             return self.forest.predict(self.reduction.transform(instance))
         else:
-            return self.forest.predict(instance)
-
-    def train(self, data):
-        try:
+         try:
+            
             self.forest = RandomForestRegressor(max_depth=300, random_state=0)
             self.reduction = PCA(n_components=40)
             self.reduction.fit(data[:, :-1], y=data[:, -1])
             self.forest.fit(self.reduction.transform(data[:, :-1]), data[:, -1])
-        except:
-            self.forest = RandomForestRegressor(max_depth=300, random_state=0)
-            self.forest.fit(data[:, :-1], data[:, -1])
-            self.reduction = False
+        except ValueError:
+        """
+
+def reward_from_events(self, events: List[str]) -> int:
+    """
+    *This is not a required function, but an idea to structure your code.*
+    Here you can modify the rewards your agent get so as to en/discourage
+    certain behavior.
+    """
+    game_rewards = {
+        e.COIN_COLLECTED: 3,
+        e.KILLED_OPPONENT: 5,
+        e.GOT_KILLED: -10,
+        e.KILLED_SELF: 3,
+        e.WAITED: -2,
+        e.CRATE_DESTROYED: 3,
+        e.INVALID_ACTION: -2,
+        e.BOMB_DROPPED: -0.5,
+        e.SURVIVED_ROUND: 5
+        #e.MOVED_LEFT: 1.5,
+        #e.MOVED_RIGHT: 1.5,
+        #e.MOVED_UP: 1.5,
+        #e.MOVED_DOWN: 1.5
+        # idea: the custom event is bad
+    }
+    reward_sum = 0
+    for event in events:
+        if event in game_rewards:
+            reward_sum += game_rewards[event]
+    #if self.transitions:
+    #    reward_sum += self.transitions[-1][-2][:,1] * 0.1
+    if len(self.transitions) > 3:
+        if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
+            reward_sum -= 5
+            self.logger.info(f"Punished repeated action")
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    if reward_sum is None:
+        return 0
+    return reward_sum

@@ -27,13 +27,16 @@ def setup(self):
 
     if self.train:
         self.model = False
+        self.rewards = False
         if os.path.isfile("my-saved-data.pt"):
-            with open("my-saved-data.pt") as file:
+            with open("my-saved-data.pt", "rb") as file:
                 self.data = pickle.load(file)
+            with open("my-saved-rewards.pt", "rb") as file:
+                self.rewards = pickle.load(file)
         else:
             self.data = False
     else:
-        with open("my-saved-model.pt") as file:
+        with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
 
 
