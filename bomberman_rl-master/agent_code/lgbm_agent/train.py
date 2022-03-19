@@ -6,14 +6,10 @@ import random
 from typing import List
 import os
 
-from torchinfo import summary
-
 import events as e
 import settings
 from . import callbacks
-import torch.optim as optim
-
-import torch as T
+from lightgbm import LGBMRegressor
 
 
 # This is only an example!
@@ -34,7 +30,6 @@ training_verbosity = 0
 
 ROUNDS = 0
 
-
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -45,13 +40,8 @@ def setup_training(self):
     """
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
-
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
-
     self.states = np.zeros((TRANSITION_HISTORY_SIZE, 2 * settings.COLS * settings.ROWS), dtype=np.float32)
     self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 2 * settings.COLS * settings.ROWS), dtype=np.float32)
-
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -61,10 +51,6 @@ def setup_training(self):
     self.gamma = callbacks.gamma
     self.batch_size = batch_size
     self.mem_size = TRANSITION_HISTORY_SIZE
-    self.scheduler = optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lr_lambda=lambda x: 0.9999769744141629,
-                                                    verbose=True)
-
-    self.scheduler = T.optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lambda x: 0.99995, verbose=True)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -137,35 +123,38 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pass
 
     else:
-        self.model.optimizer.zero_grad()
-        self.model.train(mode=True)     #For Batch normalization and pooling layers
-
         max_mem = min(self.MEMORY_ITERATOR, self.mem_size)
 
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
         batch_idx = np.arange(self.batch_size, dtype=np.int32)
 
-        state_batch = T.tensor(self.states[batch]).to(self.model.device)
-        new_state_batch = T.tensor(self.nextstates[batch]).to(self.model.device)
+        state_batch = np.array(self.states[batch])
+        new_state_batch = np.array(self.nextstates[batch])
         action_batch = self.actions[batch]
-        reward_batch = T.tensor(self.rewards[batch]).to(self.model.device)
-        terminal_batch = T.tensor(self.terminals[batch]).to(self.model.device)
+        reward_batch = np.array(self.rewards[batch])
+        terminal_batch = np.array(self.terminals[batch])
 
-        evaled_temp = self.model.forward(state_batch)
-        evaled = evaled_temp[batch_idx, action_batch]
-        next = self.model.forward(new_state_batch)
-        next[terminal_batch.long()] = 0.0
+        try:
+            evaled = self.model.predict(state_batch)[batch_idx]
+            next = self.model.predict(new_state_batch)
+        except:
+            evaled = np.zeros((batch_size,6))
+            next = np.zeros((batch_size,6))
 
-        target = reward_batch + self.gamma * T.max(next, dim=1)[0]
+        next[terminal_batch] = np.zeros(6)
 
-        print("Reward: ", T.sum(reward_batch), end="")
-
-        loss = self.model.loss(target, evaled).to(self.model.device)
-        loss.backward()
-        self.model.optimizer.step()
-        self.scheduler.step()
-        #To raise an error if the gradient is null somewhere
-        T.autograd.set_detect_anomaly(True)
+        for i in range(0, batch_size):
+            q_update = reward_batch[i]
+            if not terminal_batch[i]:
+                if self.model.isFit:
+                    q_update = reward_batch[i] + callbacks.gamma * np.amax(next[idx])
+                else:
+                    q_update = reward_batch[i]
+            if self.isFit:
+                q_values = self.model.predict(state_batch[i])
+            else:
+                q_values = np.zeros(6)
+            q_values[0][action_batch[i]]
 
         self.ITERATION_COUNTER += 1
         print("epsilon: ", callbacks.epsilon)
@@ -174,8 +163,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
 
         if self.ITERATION_COUNTER % 100 == 0:
-            T.save(self.model, "model.pt")
-            print(summary(self.model,[64,584],depth=4))
+            with open(callbacks.modelpath, "wb") as handle:
+                pickle.dump(self.model,handle)
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -199,8 +188,5 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-        #if e.INVALID_ACTION:
-         #   print("Invalid")
-
     #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
