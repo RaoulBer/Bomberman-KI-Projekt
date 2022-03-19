@@ -21,7 +21,7 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 300  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 batch_size = 64
 
@@ -46,23 +46,18 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
 
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 4, settings.ROWS, settings.COLS), dtype=np.float32)
-
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 2 * settings.COLS * settings.ROWS), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 2 * settings.COLS * settings.ROWS), dtype=np.float32)
-
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 584), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 584), dtype=np.float32)
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.terminals = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
+
     self.MEMORY_ITERATOR = 0
     self.ITERATION_COUNTER = 0
     self.gamma = callbacks.gamma
     self.batch_size = batch_size
     self.mem_size = TRANSITION_HISTORY_SIZE
-    self.scheduler = optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lr_lambda=lambda x: 0.9999769744141629,
-                                                    verbose=True)
 
     self.scheduler = T.optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lambda x: 0.99995, verbose=True)
 

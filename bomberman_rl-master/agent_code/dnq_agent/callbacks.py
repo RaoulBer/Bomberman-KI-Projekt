@@ -30,17 +30,15 @@ fc2Dim = 128
 input_dims = 584
 
 class Model(nn.Module):
-    def __init__(self, lr, input_channels, fc1_dims, fc2_dims,
-                 n_actions):
+    def __init__(self, lr, input_channels, fc1_dims, fc2_dims, n_actions):
         super(Model, self).__init__()
-        self.fc_input_dims = 578
+        self.fc1_dims = fc1_dims
+        self.fc2_dims = fc2_dims
+        self.fc_input_dims = 584
         self.n_actions = n_actions
         self.input_channels = input_channels
-
-
         self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
-        #self.bn1d2 = nn.BatchNorm1d(fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
@@ -134,26 +132,27 @@ def validAction(game_state: dict):
     #retrieve player position
     playerx, playery = game_state["self"][3]
 
-    #UP -- Check for wall or crate
+    #UP -- Check for wall or crate or explosion
     if (game_state["field"][playerx][playery-1] != 0) or isdeadly(playerx,playery-1, game_state):
         validAction[0] = 0
-    #RIGHT -- Check for wall or crate
-    if game_state["field"][playerx+1][playery] != 0  or isdeadly(playerx+1,playery, game_state):
+    #RIGHT -- Check for wall or crate or explosion
+    if game_state["field"][playerx+1][playery] != 0 or isdeadly(playerx+1,playery, game_state):
         validAction[1] = 0
-    #DOWN -- Check for wall or crate
+    #DOWN -- Check for wall or crate or explosion
     if game_state["field"][playerx][playery+1] != 0 or isdeadly(playerx, playery+1, game_state):
         validAction[2] = 0
-    #LEFT -- Check for wall or crate
+    #LEFT -- Check for wall or crate or explosion
     if game_state["field"][playerx-1][playery] != 0 or isdeadly(playerx-1, playery, game_state):
         validAction[3] = 0
 
     #Check if Bomb action is possible
-    validAction[5] = 1 if game_state["self"][2] else 0
+    if not game_state["self"][2]:
+        validAction[5] = 0
 
-    return validAction
+    return np.array(validAction)
 
-def isdeadly(game_state: dict):
-    if game_state["explosion_map"][game_state["self"][3][0]][game_state["self"][3][1]] != 0:
+def isdeadly(x,y,game_state: dict):
+    if game_state["explosion_map"][x][y] != 0:
         return True
     else:
         return False
@@ -176,55 +175,46 @@ def parseStep(game_state: dict) -> int:
         return 0
 
 
-def parseField(game_state: dict) -> T.tensor:
+def parseField(game_state: dict) -> np.array:
     try:
-        return T.tensor(game_state["field"])
+        return np.array(game_state["field"])
     except ValueError:
         print("Value error in field parser")
 
 
-def parseExplosionMap(game_state: dict) -> T.tensor:
+def parseExplosionMap(game_state: dict) -> np.array:
     try:
-        return T.tensor(game_state["explosion_map"])
+        return np.array(game_state["explosion_map"])
     except ValueError:
         print("Value error in explosion map parser")
 
 
-def parseBombs(game_state: dict) -> np.array:
+def parseBombs(game_state: dict, deadly_map):
     try:
-        featurevector = np.zeros((settings.COLS, settings.ROWS))
         for bomb in game_state["bombs"]:
-            featurevector[bomb[0][0]][bomb[0][1]] = -bomb[1] - 1
-        return featurevector
+            deadly_map[bomb[0][0]][bomb[0][1]] = -bomb[1] - 1
     except ValueError:
         print("Value Error in bomb parser")
 
 
-def parseCoins(game_state: dict) -> T.tensor:
+def parseCoins(game_state: dict, objective_map) -> np.array:
     try:
-        coin_tensor = T.zeros(settings.ROWS, settings.COLS)
         for coin in game_state["coins"]:
-            coin_tensor[coin[0]][coin[1]] = 1
-        return coin_tensor
+            objective_map[coin[0]][coin[1]] = 5
     except ValueError:
         print("Value Error in coin parser")
 
-def parseSelf(game_state: dict) -> T.tensor:
+def parseSelf(game_state: dict, objective_map):
     try:
-        self_tensor = T.zeros(settings.ROWS, settings.COLS)
-        self_tensor[game_state["self"][3][0]][game_state["self"][3][1]] = 1
-        return self_tensor
+        objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = 100
     except ValueError:
         print("Error in Self parser")
 
 
-def parseOthers(game_state: dict) -> T.tensor:
+def parseOthers(game_state: dict, objective_map):
     try:
-        others_tensor = T.zeros(settings.ROWS, settings.COLS)
         for other in game_state["others"]:
-            others_tensor[other[3][0]][other[3][1]] = -1
-
-        return others_tensor
+            objective_map[other[3][0]][other[3][1]] = 50
 
     except ValueError:
         print("Value error in Others parser")
@@ -252,9 +242,11 @@ def state_to_features(game_state: dict):
     parseSelf(game_state, objective_map)
     parseOthers(game_state, objective_map)
 
-    deadly_map = parseBombs(game_state)
-    deadly_map = deadly_map + parseExplosionMap(game_state)
+    deadly_map = parseExplosionMap(game_state)
+    parseBombs(game_state, deadly_map)
+    validactions = validAction(game_state)
 
-    output_vector = np.append(objective_map.flatten(), deadly_map.flatten(), isdeadly())
+    output_vector = np.append(objective_map.flatten(), deadly_map.flatten())
+    output_vector = np.append(output_vector, validactions)
 
     return output_vector
