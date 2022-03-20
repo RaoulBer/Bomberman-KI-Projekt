@@ -22,6 +22,47 @@ BOMBTHREAD = "BOMBTHREAT"
 GOLDRUSH = "GOLDRUSH"
 
 
+def reward_from_events(self, events: List[str]) -> int:
+    """
+    *This is not a required function, but an idea to structure your code.*
+    Here you can modify the rewards your agent get so as to en/discourage
+    certain behavior.
+    """
+    game_rewards = {
+        e.COIN_COLLECTED: 10,
+        e.KILLED_OPPONENT: 10,
+        e.GOT_KILLED: -5,
+        e.KILLED_SELF: 3,
+        e.WAITED: -1,
+        e.CRATE_DESTROYED: 3,
+        e.INVALID_ACTION: -2,
+        e.BOMB_DROPPED: -0.5,
+        e.SURVIVED_ROUND: 5,
+        e.BOMBTHREAD: -8,
+        e.GOLDSEARCH: 4,
+        e.ENEMYINLINE: 2,
+        e.GOLDRUSH: 1,
+        e.AVOIDED_BOMB: 5,
+        e.OPPONENT_ELIMINATED: 6
+        # e.MOVED_LEFT: 1.5,
+        # e.MOVED_RIGHT: 1.5,
+        # e.MOVED_UP: 1.5,
+        # e.MOVED_DOWN: 1.5
+    }
+    reward_sum = 0
+    for event in events:
+        if event in game_rewards:
+            reward_sum += game_rewards[event]
+    if len(self.transitions) > 3:
+        if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
+            reward_sum -= 2
+            self.logger.info(f"Punished repeated action")
+    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    if reward_sum is None:
+        return 0
+    return reward_sum
+
+
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -43,7 +84,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     with open("rewards.pt", "rb") as file:
         re = pickle.load(file)
-    re.append(reward_from_events(self, events))
+    re.append(reward_from_events(self, events)) # if needed: change to measure_performance instead of reward_from_events
     with open("rewards.pt", "wb") as file:
         pickle.dump(re, file)
     self.oldstate = old_game_state
@@ -189,9 +230,7 @@ def measure_performance(self, events: List[str]):
     game_rewards = {
         e.COIN_COLLECTED: 2,
         e.KILLED_OPPONENT: 6,
-        e.GOT_KILLED: -4,
-        e.KILLED_SELF: -4,
-        e.CRATE_DESTROYED: 1.5,
+        e.GOT_KILLED: -4
     }
     reward_sum = -1
     for event in events:
@@ -216,47 +255,6 @@ class MyModel:
         if data.shape[0] >= 1600:
             data = data[np.random.choice(data.shape[0], 1600), :]
         self.forest.fit(data[:, :-1], data[:, -1])
-
-
-def reward_from_events(self, events: List[str]) -> int:
-    """
-    *This is not a required function, but an idea to structure your code.*
-    Here you can modify the rewards your agent get so as to en/discourage
-    certain behavior.
-    """
-    game_rewards = {
-        e.COIN_COLLECTED: 10,
-        e.KILLED_OPPONENT: 10,
-        e.GOT_KILLED: -5,
-        e.KILLED_SELF: 3,
-        e.WAITED: -1,
-        e.CRATE_DESTROYED: 3,
-        e.INVALID_ACTION: -2,
-        e.BOMB_DROPPED: -0.5,
-        e.SURVIVED_ROUND: 5,
-        e.BOMBTHREAD: -8,
-        e.GOLDSEARCH: 4,
-        e.ENEMYINLINE: 2,
-        e.GOLDRUSH: 1,
-        e.AVOIDED_BOMB: 5,
-        e.OPPONENT_ELIMINATED: 6
-        # e.MOVED_LEFT: 1.5,
-        # e.MOVED_RIGHT: 1.5,
-        # e.MOVED_UP: 1.5,
-        # e.MOVED_DOWN: 1.5
-    }
-    reward_sum = 0
-    for event in events:
-        if event in game_rewards:
-            reward_sum += game_rewards[event]
-    if len(self.transitions) > 3:
-        if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
-            reward_sum -= 2
-            self.logger.info(f"Punished repeated action")
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
-    if reward_sum is None:
-        return 0
-    return reward_sum
 
 
 def in_bombs_way(next):
