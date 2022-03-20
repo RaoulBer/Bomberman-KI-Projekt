@@ -52,8 +52,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = self.random_prob * 0.88 + 0.01
-    print(self.random_prob)
+        self.random_prob = self.random_prob * 0.88 + 0.02
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -62,7 +61,7 @@ def act(self, game_state: dict) -> str:
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
     self.logger.debug("Querying model for action.")
-    game_state_use = state_to_features(self, game_state)
+    game_state_use = state_to_features(game_state)
 
     highest_known = -1000
     response = 4  # Standard: Wait
@@ -78,28 +77,34 @@ def act(self, game_state: dict) -> str:
     return ACTIONS[response]
 
 
-def state_to_features(self, game_state: dict) -> np.array:
+def state_to_features(game_state: dict) -> np.array:
     """
     :param self: Stuff
     :param game_state:  A dictionary describing the current game board.
     :return: np.array
     """
-
-    # todo: Funktionale Programmierung implementieren.
-
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
 
-    *_, (s0, s1) = game_state["self"]
-    features = np.zeros((4 + 50, 1))
-    bombs = np.zeros((4, 5))
-    coins = np.zeros((3, 4))
-    players = np.zeros((3, 5))
-    features[0] = game_state["round"]
-    features[1] = np.floor(game_state["step"] / 100)
-    features[2] = s0
-    features[3] = s1
+    s0, s1 = game_state["self"][3]
+    features = parse_field_orientation(game_state, s0, s1)
+    bombs = parse_bombspots(game_state, s0, s1)
+    players = parse_players(game_state, s0, s1)
+    coins = parse_coins(game_state, s0, s1)
+    out = np.concatenate((features, players, bombs, coins), axis=1)
+    assert out.shape[0] == 1
+    return out
+
+
+def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
+    features = np.zeros((1, 6+48))
+    features[0, 0] = game_state["round"]
+    features[0, 1] = np.floor(game_state["step"] / 100)
+    features[0, 2] = s0
+    features[0, 3] = s1
+    features[0, 4] = 99
+    features[0, 5] = 99
     field = game_state["field"]
     mask2 = np.ones(shape=field.shape, dtype=bool)
     mask1 = np.zeros(shape=field.shape, dtype=bool)
@@ -109,89 +114,70 @@ def state_to_features(self, game_state: dict) -> np.array:
     expl_crates = game_state["explosion_map"][mask1.nonzero()]
     field = field[mask1.nonzero()]
     expl_crates = - expl_crates[mask2.nonzero()] + field[mask2.nonzero()]
-    features[4:expl_crates.size + 4, 0] = 3 * expl_crates.flatten()
-    features[-2:, 0] = np.array([s0, s1])
+    features[0, 6:expl_crates.size + 6] = 3 * expl_crates.flatten()
+
+    assert features.shape == (1, 54)
+    return features
+
+
+def parse_bombspots(game_state: dict, s0, s1) -> np.array:
+    bombs = np.zeros((4, 5))
     b = sorted(game_state["bombs"], key=lambda x: (s0 - x[0][0]) ** 2 + (s1 - x[0][1]) ** 2)
-    others = sorted(game_state["others"], key=lambda x: (s0 - x[-1][0]) ** 2 + (s1 - x[-1][1]) ** 2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], bomb[1], s0 - bomb[0][0], s1 - bomb[0][1]])
-            # bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], bomb[1], 99, 99])
+            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], 99, 99, bomb[1]])
+    return bombs.reshape(1, 20)
+
+
+def parse_players(game_state: dict, s0, s1) -> np.array:
+    players = np.zeros((3, 5))
+    others = sorted(game_state["others"], key=lambda x: (s0 - x[-1][0]) ** 2 + (s1 - x[-1][1]) ** 2)
     if others is not None:
         for i, other in enumerate(others):
             if other is None:
                 break
             if other[2]:
                 players[i, :] = np.array(
-                    [s0 - other[-1][0], s1 - other[-1][1], -1, s0 - other[-1][0], s1 - other[-1][1]])
-                # players[i, :] = np.array([s0 - other[-1][0], s1 - other[-1][1], -1, 99, 99])
+                    [s0 - other[-1][0], s1 - other[-1][1],  99, 99, -1])
             else:
                 players[i, :] = np.array(
-                    [s0 - other[-1][0], s1 - other[-1][1], 1, s0 - other[-1][0], s1 - other[-1][1]])
-                # players[i, :] = np.array([s0 - other[-1][0], s1 - other[-1][1], 1, 99, 99])
+                    [s0 - other[-1][0], s1 - other[-1][1],  99, 99, 1])
+    return players.reshape(1, 15)
 
+
+def parse_coins(game_state, s0, s1) -> np.array:
+    coins = np.zeros((3, 4))
     c = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)
     if c is not None:
         for i, coin in enumerate(c):
             if coin is None or i == 3:
                 break
-            coins[i, :] = np.array([s0 - coin[0], s1 - coin[1], s0 - coin[0], s1 - coin[1]])
-            # coins[i, :] = np.array([s0 - coin[0], s1 - coin[1], 99, 99])
-
-    bombs = bombs.reshape(20, 1)
-    players = players.reshape(15, 1)
-    coins = coins.reshape(12, 1)
-    out = np.concatenate((features, players, bombs, coins), axis=0).T
-    assert out.shape[0] == 1
-    return out
+            coins[i, :] = np.array([s0 - coin[0], s1 - coin[1],  99, 99])
+    return coins.reshape(1, 12)
 
 
-def possible_steps2(feature, bomb=True):
-    actions = [4]
-    j = 3
-    i = 2
-    if feature[0, i] % 2 == 1:
-        if feature[0, j] < 15:
-            if feature[0, j] > 1:
-                actions.append(0)
-                actions.append(2)
-            else:
-                actions.append(2)
-        else:
-            actions.append(0)
-    if feature[0, j] % 2 == 1:
-        if feature[0, i] < 15:
-            if feature[0, i] > 1:
-                actions.append(1)
-                actions.append(3)
-            else:
-                actions.append(1)
-        else:
-            actions.append(3)
-    if bomb:
-        actions.append(5)
-    return np.sort(actions)
 
 def possible_steps(game_state: dict):
     validAction = [4]
+    if game_state is None:
+        return np.array([0, 1, 2, 3, 4, 5])
     playerx, playery = game_state["self"][3]
 
     #UP
-    if not (game_state["field"][playerx][playery-1] != 0):
+    if (game_state["field"][playerx][playery-1] == 0):
         validAction.append(0)
     #RIGHT
-    if not (game_state["field"][playerx+1][playery] != 0):
+    if (game_state["field"][playerx+1][playery] == 0):
         validAction.append(1)
     #DOWN
-    if not (game_state["field"][playerx][playery+1] != 0):
+    if (game_state["field"][playerx][playery+1] == 0):
         validAction.append(2)
     #LEFT
-    if not (game_state["field"][playerx-1][playery] != 0):
+    if (game_state["field"][playerx-1][playery] == 0):
         validAction.append(3)
 
     if game_state["self"][2]:
         validAction.append(5)
-
     return np.sort(validAction)
 
 
@@ -207,7 +193,24 @@ def return_distro(actions):
 
 
 def make_dependencies(data, action):
-    for i in range(data.shape[0]):
-        data[i, [52, 53, 57, 58, 62, 63, 67, 68, 72, 73, 77, 78, 82, 83, 91, 92, 95, 96, 99, 100]] = \
-            data[i, [52, 53, 57, 58, 62, 63, 67, 68, 72, 73, 77, 78, 82, 83, 91, 92, 95, 96, 99, 100]] * action
+    if len(data.shape) == 2:
+        places, take_from = return_doubles1(data)
+        data[0, places] = data[0, [take_from]] * action
+    else:
+        places, take_from = return_doubles2(data)
+        data[places] = data[take_from] * action
     return data
+
+
+def return_doubles1(feature):
+    places = (feature == 99).nonzero()[1]
+    take_from = places - 2
+    return places, take_from
+
+
+
+def return_doubles2(feature):
+    places = (feature == 99).nonzero()[0]
+    take_from = places - 2
+    return places, take_from
+

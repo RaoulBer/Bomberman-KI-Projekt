@@ -1,14 +1,11 @@
 from collections import namedtuple, deque
-import os
 import pickle
 from typing import List
 import numpy as np
 import events as e
 from .callbacks import state_to_features
 from .callbacks import possible_steps
-from .callbacks import possible_steps2
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.decomposition import PCA
 from .callbacks import make_dependencies
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -17,12 +14,8 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
-# Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 15  # keep only ... last transitions
-# RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-
 # Events
-PLACEHOLDER_EVENT = "PLACEHOLDER"
 GOLDSEARCH = "GOLDSEARCH"
 ENEMYINLINE = "ENEMYINLINE"
 BOMBTHREAD = "BOMBTHREAT"
@@ -35,7 +28,7 @@ def setup_training(self):
     This is called after `setup` in callbacks.py.
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    # Example: Setup an array that will note transition tuples
+    # Example: Set up an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     with open("rewards.pt", "wb") as file:
@@ -50,28 +43,30 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     with open("rewards.pt", "rb") as file:
         re = pickle.load(file)
-    re.append(measure_performance(self, events))
+    re.append(reward_from_events(self, events))
     with open("rewards.pt", "wb") as file:
         pickle.dump(re, file)
+    self.oldstate = old_game_state
+    self.newstate = new_game_state
 
     # state_to_features is defined in callbacks.py
     if old_game_state is not None and new_game_state is not None and self_action is not None:
-        if way_to_go(state_to_features(self, old_game_state), state_to_features(self, new_game_state)):
+        old = state_to_features(old_game_state)
+        new = state_to_features(new_game_state)
+        if way_to_go(old, new):
             events.append(GOLDSEARCH)
-        #if face_opponent(state_to_features(self, new_game_state)):
-        #    events.append(ENEMYINLINE)
-        if in_bombs_way(state_to_features(self, new_game_state)):
+        if face_opponent(new):
+            events.append(ENEMYINLINE)
+        if in_bombs_way(new):
             events.append(BOMBTHREAD)
-        if way_to_go2(state_to_features(self, new_game_state)):
+        if way_to_go2(new):
             events.append(GOLDRUSH)
-        self.transitions.append(
-            Transition(state_to_features(self, old_game_state), self_action, state_to_features(self, new_game_state),
-                       reward_from_events(self, events)))
+        self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
         y_t = construct_Y(self)
         transition_list_to_data(self, Ys=y_t)
-        update_model(self, weights=None)
+        update_model(self)
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
 
@@ -85,10 +80,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     This is also a good place to store an agent that you updated.
     :param self: The same object that is passed to all of your callbacks.
     """
+    self.oldstate = last_game_state
+    self.newstate = None
+
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     if last_game_state is not None and last_action is not None:
         self.transitions.append(
-            Transition(state_to_features(self, last_game_state), last_action, None, reward_from_events(self, events)))
+            Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
 
     # Store the model
     y_t = construct_Y(self)
@@ -116,13 +114,17 @@ def unique(a):
 '''
 
 
-def update_model(self, weights=None):
-    # todo Dimension-reduction nicht speichern in my-saved-data, nur lernen im forest etc. -
-    #  dadurch kann noch korrigiert werden falls features sich ändern.
-    # todo generate new Y each round
+def update_model(self):
+    y_old = self.data[:,-1].copy()
     self.model = MyModel()
     self.model.train(self.data)
     update_y(self)
+    y_new = self.data[:,-1].copy()
+    diff = np.linalg.norm(y_old-y_new)
+    print(f"Difference in Y- Calculation: {diff}")
+    if diff == 1:
+        print("no changes")
+        throwerror()
 
 
 def update_y(self):
@@ -148,9 +150,10 @@ def transition_list_to_data(self, Ys):
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
-        array = make_dependencies(array, action=ACTIONS.index(transition[1]))
+        array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
         rewards[i] = transition[-1]
-    array = np.nan_to_num(array, copy=True)
+    if np.isnan(array).any():
+        array = np.nan_to_num(array, copy=True)
     try:
         self.data = np.concatenate((self.data, array))
     except ValueError:
@@ -171,7 +174,7 @@ def construct_Y(self):
             data = np.empty((1, transition[2].size + 1))
             data[0, :-1] = transition[2]
             ret = []
-            for i in possible_steps2(feature=transition[2], bomb=True):
+            for i in possible_steps(self.newstate):
                 data[0, -1] = i
                 ret.append(self.model.predict(make_dependencies(data, i)))
             val = np.max(ret)
@@ -193,8 +196,6 @@ def measure_performance(self, events: List[str]):
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    # if self.transitions:
-    #    reward_sum += self.transitions[-1][-2][:,1]
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
@@ -203,30 +204,17 @@ def measure_performance(self, events: List[str]):
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+        self.forest = RandomForestRegressor(max_depth=100, random_state=0)
         self.reduction = False
 
     def predict(self, instance):
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(max_depth=300, random_state=0)
+        self.forest = RandomForestRegressor(max_depth=100, random_state=0)
         if data.shape[0] >= 1600:
             data = data[np.random.choice(data.shape[0], 1600), :]
         self.forest.fit(data[:, :-1], data[:, -1])
-
-        """
-        if self.reduction:
-            return self.forest.predict(self.reduction.transform(instance))
-        else:
-         try:
-            
-            self.forest = RandomForestRegressor(max_depth=300, random_state=0)
-            self.reduction = PCA(n_components=40)
-            self.reduction.fit(data[:, :-1], y=data[:, -1])
-            self.forest.fit(self.reduction.transform(data[:, :-1]), data[:, -1])
-        except ValueError:
-        """
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -255,14 +243,11 @@ def reward_from_events(self, events: List[str]) -> int:
         # e.MOVED_RIGHT: 1.5,
         # e.MOVED_UP: 1.5,
         # e.MOVED_DOWN: 1.5
-        # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    # if self.transitions:
-    #    reward_sum += self.transitions[-1][-2][:,1] * 0.1
     if len(self.transitions) > 3:
         if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
             reward_sum -= 2
@@ -270,7 +255,6 @@ def reward_from_events(self, events: List[str]) -> int:
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
-    #print(events)
     return reward_sum
 
 
@@ -292,7 +276,7 @@ def way_to_go(last_state, next_state):
 
 def way_to_go2(next_state):
     if (next_state[0, -12] == 0 or next_state[0, -11] == 0) and (next_state[0, -12] < 3 or next_state[0, -11] < 3) \
-            and (next_state[0, -12] != next_state[0, -11]).any():
+            and (next_state[0, -12] != next_state[0, -11]):
         return True
     else:
         return False
