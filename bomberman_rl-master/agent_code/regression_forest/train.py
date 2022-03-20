@@ -93,6 +93,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     transition_list_to_data(self, Ys=y_t)
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    uni = unique(self.data)
+    self.data = self.data[uni,:]
+    self.rewards = self.rewards[uni]
+    assert self.rewards.size == self.data.shape[0]
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
     with open("my-saved-model.pt", "wb") as file:
@@ -102,16 +106,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.LEARN_RATE = self.LEARN_RATE * 0.95 + 0.03
 
 
-
-'''
 def unique(a):
     order = np.lexsort(a.T)
     a = a[order]
     diff = np.diff(a, axis=0)
     ui = np.ones(len(a), 'bool')
     ui[1:] = (diff != 0).any(axis=1)
-    return a[ui]
-'''
+    return ui
 
 
 def update_model(self):
@@ -122,7 +123,7 @@ def update_model(self):
     y_new = self.data[:,-1].copy()
     diff = np.linalg.norm(y_old-y_new)
     print(f"Difference in Y- Calculation: {diff}")
-    if diff == 1:
+    if diff <= 1:
         print("no changes")
         throwerror()
 
