@@ -53,14 +53,16 @@ def act(self, game_state: dict) -> str:
     if game_state["round"] != self.round:
         self.round = game_state["round"]
         self.random_prob = self.random_prob * 0.88 + 0.01
+    print(self.random_prob)
 
-    game_state_use = state_to_features(self, game_state)
-    possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
+    #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
+    possible = possible_steps(game_state)
     if (self.train and random.random() < self.random_prob) or not self.model:
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
     self.logger.debug("Querying model for action.")
+    game_state_use = state_to_features(self, game_state)
 
     highest_known = -1000
     response = 4  # Standard: Wait
@@ -144,7 +146,7 @@ def state_to_features(self, game_state: dict) -> np.array:
     return out
 
 
-def possible_steps(feature, bomb=True):
+def possible_steps2(feature, bomb=True):
     actions = [4]
     j = 3
     i = 2
@@ -169,6 +171,28 @@ def possible_steps(feature, bomb=True):
     if bomb:
         actions.append(5)
     return np.sort(actions)
+
+def possible_steps(game_state: dict):
+    validAction = [4]
+    playerx, playery = game_state["self"][3]
+
+    #UP
+    if not (game_state["field"][playerx][playery-1] != 0):
+        validAction.append(0)
+    #RIGHT
+    if not (game_state["field"][playerx+1][playery] != 0):
+        validAction.append(1)
+    #DOWN
+    if not (game_state["field"][playerx][playery+1] != 0):
+        validAction.append(2)
+    #LEFT
+    if not (game_state["field"][playerx-1][playery] != 0):
+        validAction.append(3)
+
+    if game_state["self"][2]:
+        validAction.append(5)
+
+    return np.sort(validAction)
 
 
 def return_distro(actions):

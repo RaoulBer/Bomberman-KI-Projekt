@@ -6,6 +6,7 @@ import numpy as np
 import events as e
 from .callbacks import state_to_features
 from .callbacks import possible_steps
+from .callbacks import possible_steps2
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.decomposition import PCA
 from .callbacks import make_dependencies
@@ -170,7 +171,7 @@ def construct_Y(self):
             data = np.empty((1, transition[2].size + 1))
             data[0, :-1] = transition[2]
             ret = []
-            for i in possible_steps(feature=transition[2], bomb=True):
+            for i in possible_steps2(feature=transition[2], bomb=True):
                 data[0, -1] = i
                 ret.append(self.model.predict(make_dependencies(data, i)))
             val = np.max(ret)
@@ -245,9 +246,11 @@ def reward_from_events(self, events: List[str]) -> int:
         e.BOMB_DROPPED: -0.5,
         e.SURVIVED_ROUND: 5,
         e.BOMBTHREAD: -8,
-        e.GOLDSEARCH: 5,
-        e.ENEMYINLINE: 1,
-        e.GOLDRUSH: 2
+        e.GOLDSEARCH: 4,
+        e.ENEMYINLINE: 2,
+        e.GOLDRUSH: 1,
+        e.AVOIDED_BOMB: 5,
+        e.OPPONENT_ELIMINATED: 6
         # e.MOVED_LEFT: 1.5,
         # e.MOVED_RIGHT: 1.5,
         # e.MOVED_UP: 1.5,
@@ -267,6 +270,7 @@ def reward_from_events(self, events: List[str]) -> int:
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
+    #print(events)
     return reward_sum
 
 
@@ -288,7 +292,7 @@ def way_to_go(last_state, next_state):
 
 def way_to_go2(next_state):
     if (next_state[0, -12] == 0 or next_state[0, -11] == 0) and (next_state[0, -12] < 3 or next_state[0, -11] < 3) \
-            and (next_state[0, -12] != next_state[0, -11]).any() :
+            and (next_state[0, -12] != next_state[0, -11]).any():
         return True
     else:
         return False
