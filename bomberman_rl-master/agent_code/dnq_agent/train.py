@@ -46,8 +46,8 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
 
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 584), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 584), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 242), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 242), dtype=np.float32)
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -59,7 +59,7 @@ def setup_training(self):
     self.batch_size = batch_size
     self.mem_size = TRANSITION_HISTORY_SIZE
 
-    self.scheduler = T.optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lambda x: 0.99995, verbose=True)
+    #self.scheduler = T.optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lambda x: 0.99995, verbose=True)
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -158,8 +158,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         loss = self.model.loss(target, evaled).to(self.model.device)
         loss.backward()
         self.model.optimizer.step()
-        self.scheduler.step()
-        #To raise an error if the gradient is null somewhere
         T.autograd.set_detect_anomaly(True)
 
         self.ITERATION_COUNTER += 1
@@ -170,7 +168,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         if self.ITERATION_COUNTER % 100 == 0:
             T.save(self.model, "model.pt")
-            print(summary(self.model,[64,584],depth=4))
+            print(summary(self.model,[64,242],depth=4))
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -181,21 +179,21 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.CRATE_DESTROYED: 3,
+        e.CRATE_DESTROYED: 5,
         e.COIN_COLLECTED: 5,
-        e.KILLED_OPPONENT: 8,
-        e.GOT_KILLED: -8,
-        e.KILLED_SELF: -10,
-        e.WAITED: -2,
-        e.INVALID_ACTION: -2,
-        e.BOMB_DROPPED: -1,
+        e.KILLED_OPPONENT: 10,
+        e.GOT_KILLED: -10,
+        e.KILLED_SELF: -12,
+        e.WAITED: -5,
+        e.INVALID_ACTION: -10,
+        e.BOMB_DROPPED: -2,
+        e.SURVIVED_ROUND: 20,
+        e.IN_CIRCLES: -20
     }
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-        #if e.INVALID_ACTION:
-         #   print("Invalid")
 
     #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum

@@ -2,6 +2,7 @@ bomberman_rl-master/*
 .idea
 
 !bomberman_rl-master/agent_code
+!bomberman_rl-master/environment.py
 
 bomberman_rl-master/agent_code/coin_collector_agent
 bomberman_rl-master/agent_code/fail_agent

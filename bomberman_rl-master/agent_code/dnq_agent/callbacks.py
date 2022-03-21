@@ -16,7 +16,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
 #factors determining explorative behaviour
-epsilon = 1.0
+epsilon = 0.1
 epsilon_decay = 0.99995
 epsilon_min = 0.10
 
@@ -24,17 +24,17 @@ epsilon_min = 0.10
 #model parameters
 action_size = len(ACTIONS)
 gamma = 0.90
-learning_rate = 0.1
-fc1Dim = 256
-fc2Dim = 128
-input_dims = 584
+learning_rate = 0.0001
+fc1Dim = 121
+fc2Dim = 60
+input_dims = 242
 
 class Model(nn.Module):
     def __init__(self, lr, input_channels, fc1_dims, fc2_dims, n_actions):
         super(Model, self).__init__()
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
-        self.fc_input_dims = 584
+        self.fc_input_dims = input_channels
         self.n_actions = n_actions
         self.input_channels = input_channels
         self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
@@ -102,16 +102,17 @@ def act(self, game_state: dict) -> str:
     """
     # todo Exploration vs exploitation
 
-    if self.train: # and random.random() <= epsilon:
+    if self.train and random.random() <= epsilon:
         #self.logger.debug("Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         #ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
         #valids = validAction(game_state)
         #possible_actions = [a for idx, a in enumerate(ACTIONS) if valids[idx]]
-        action_chosen = np.random.choice(ACTIONS)
+        #action_chosen = np.random.choice(possible_actions)
+        action_chosen = np.random.choice(ACTIONS, p=[0.2,0.2,0.2,0.2,0.1,0.1])
         #print("Action:", action_chosen)
 
-        return np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
+        return action_chosen
     #self.logger.debug("Querying model for action.")
 
     """
@@ -122,7 +123,7 @@ def act(self, game_state: dict) -> str:
 
     predicted_q_values = self.model.forward(state_to_features(game_state))
     action_chosen = ACTIONS[T.argmax(predicted_q_values)]
-    print("Action: ", action_chosen)
+    #print("Action: ", action_chosen)
 
     return action_chosen
 
@@ -168,6 +169,23 @@ def excludeInvalidActions(game_state: dict, q_values_tensor):
 
     return excluded_qs
 
+def aroundAgent(game_state: dict, input_field, isbombarray = False) -> np.array:
+    #returns a 5 +/- array of the input_field around the agents position
+    playerx, playery = game_state["self"][3]
+    if isbombarray:
+        returnarray = np.zeros((11,11))
+    else:
+        returnarray = -np.ones((11,11))
+
+    for i in range(-5,6):
+        for j in range(-5,6):
+            tempx = playerx + i
+            tempy = playery + j
+            if (tempx > 0 and tempx < 17) and (tempy > 0 and tempy < 17):
+                returnarray[i+5][j+5] = input_field[tempx][tempy]
+
+    return returnarray
+
 def parseStep(game_state: dict) -> int:
     try:
         return game_state["step"]
@@ -206,7 +224,10 @@ def parseCoins(game_state: dict, objective_map) -> np.array:
 
 def parseSelf(game_state: dict, objective_map):
     try:
-        objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = 100
+        if game_state["self"][2]:
+            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = 1
+        else:
+            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = -1
     except ValueError:
         print("Error in Self parser")
 
@@ -244,9 +265,12 @@ def state_to_features(game_state: dict):
 
     deadly_map = parseExplosionMap(game_state)
     parseBombs(game_state, deadly_map)
-    validactions = validAction(game_state)
+    #validactions = validAction(game_state)
+
+    objective_map = aroundAgent(game_state, objective_map, False)
+    deadly_map = aroundAgent(game_state, deadly_map, True)
 
     output_vector = np.append(objective_map.flatten(), deadly_map.flatten())
-    output_vector = np.append(output_vector, validactions)
+    #output_vector = np.append(output_vector, validactions)
 
-    return output_vector
+    return T.tensor(output_vector).float()
