@@ -20,6 +20,7 @@ GOLDSEARCH = "GOLDSEARCH"
 ENEMYINLINE = "ENEMYINLINE"
 BOMBTHREAD = "BOMBTHREAT"
 GOLDRUSH = "GOLDRUSH"
+WRONGWAY = "WRONGWAY"
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -30,20 +31,20 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     game_rewards = {
         e.COIN_COLLECTED: 10,
-        e.KILLED_OPPONENT: 10,
+        e.KILLED_OPPONENT: 0,
         e.GOT_KILLED: -5,
         e.KILLED_SELF: 3,
-        e.WAITED: -1,
-        e.CRATE_DESTROYED: 3,
+        e.WAITED: -0.5,
+        e.CRATE_DESTROYED: 0,
         e.INVALID_ACTION: -2,
         e.BOMB_DROPPED: -0.5,
-        e.SURVIVED_ROUND: 5,
-        e.BOMBTHREAD: -8,
-        e.GOLDSEARCH: 4,
-        e.ENEMYINLINE: 2,
-        e.GOLDRUSH: 1,
-        e.AVOIDED_BOMB: 5,
-        e.OPPONENT_ELIMINATED: 6
+        e.SURVIVED_ROUND: 3,
+        e.BOMBTHREAD: -4,
+        e.GOLDSEARCH: 3,
+        e.ENEMYINLINE: 1,
+        e.GOLDRUSH: 0,
+        e.OPPONENT_ELIMINATED: 0,
+        e.WRONGWAY: -2.5
         # e.MOVED_LEFT: 1.5,
         # e.MOVED_RIGHT: 1.5,
         # e.MOVED_UP: 1.5,
@@ -102,6 +103,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(BOMBTHREAD)
         if way_to_go2(new):
             events.append(GOLDRUSH)
+        if wrong_way(old, new):
+            events.append(WRONGWAY)
         self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
@@ -265,9 +268,13 @@ def in_bombs_way(next):
 
 
 def way_to_go(last_state, next_state):
-    coins_next = next_state[0, -12::2].reshape(2, 3)
-    coins_last = last_state[0, -12::2].reshape(2, 3)
-    if np.sum(np.linalg.norm(coins_last, axis=0)[0]) > np.sum(np.linalg.norm(coins_next, axis=0)[0]):
+    coins_next = next_state[0, -12:]
+    coins_last = last_state[0, -12:]
+    coins_next = coins_next[(coins_next != 99).nonzero()]
+    coins_last = coins_last[(coins_last != 99).nonzero()]
+    coins_last = coins_last.reshape(int(coins_last.size/2), 2)
+    coins_next = coins_next.reshape(int(coins_next.size / 2), 2)
+    if np.sum(np.linalg.norm(coins_last, axis=1)[0]) > np.sum(np.linalg.norm(coins_next, axis=1)[0]):
         return True
     else:
         return False
@@ -283,6 +290,19 @@ def way_to_go2(next_state):
 
 def face_opponent(next_state):
     if (next_state[0, 70] == 0 or next_state[0, 71] == 0) and (next_state[0, 70] < 3 or next_state[0, 71] < 3):
+        return True
+    else:
+        return False
+
+
+def wrong_way(last_state, next_state):
+    coins_next = next_state[0, -12:]
+    coins_last = last_state[0, -12:]
+    coins_next = coins_next[(coins_next != 99).nonzero()]
+    coins_last = coins_last[(coins_last != 99).nonzero()]
+    coins_last = coins_last.reshape(int(coins_last.size / 2), 2)
+    coins_next = coins_next.reshape(int(coins_next.size/2), 2)
+    if np.sum(np.linalg.norm(coins_last, axis=1)[0]) <= np.sum(np.linalg.norm(coins_next, axis=1)[0]):
         return True
     else:
         return False
