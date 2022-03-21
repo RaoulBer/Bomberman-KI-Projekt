@@ -215,4 +215,3 @@ def return_doubles2(feature):
     places = (feature == 99).nonzero()[0]
     take_from = places - 2
     return places, take_from
-
