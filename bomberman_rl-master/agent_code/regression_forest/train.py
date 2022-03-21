@@ -14,6 +14,15 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
+"""
+IMPORTANT:
+old_game_state:  Last step, (s_t-1)
+self_action: action after new_game_state (on basis of new game state), (a_t)
+new_game_state: actual game state,  (s_t)
+events: events between old_game_state and new_game_state (Basis for r_t)
+--> What do we need: Link state of next step with reward this reward.
+"""
+
 TRANSITION_HISTORY_SIZE = 15  # keep only ... last transitions
 # Events
 GOLDSEARCH = "GOLDSEARCH"
@@ -21,6 +30,7 @@ ENEMYINLINE = "ENEMYINLINE"
 BOMBTHREAD = "BOMBTHREAT"
 GOLDRUSH = "GOLDRUSH"
 WRONGWAY = "WRONGWAY"
+WRONGLINE = "WRONGLINE"
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -42,9 +52,10 @@ def reward_from_events(self, events: List[str]) -> int:
         e.BOMBTHREAD: -4,
         e.GOLDSEARCH: 3,
         e.ENEMYINLINE: 1,
-        e.GOLDRUSH: 0,
+        e.GOLDRUSH: 1,
         e.OPPONENT_ELIMINATED: 0,
-        e.WRONGWAY: -2.5
+        e.WRONGWAY: -3,
+        e.WRONGLINE: -1,
         # e.MOVED_LEFT: 1.5,
         # e.MOVED_RIGHT: 1.5,
         # e.MOVED_UP: 1.5,
@@ -73,14 +84,15 @@ def setup_training(self):
     # Example: Set up an array that will note transition tuples
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    self.past = False
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
-    self.LEARN_RATE = 0.2
+    self.LEARN_RATE = 0.8
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
+    self.call = self_action
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-
     # Idea: Add your own events to hand out rewards
 
     with open("rewards.pt", "rb") as file:
@@ -92,6 +104,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.newstate = new_game_state
 
     # state_to_features is defined in callbacks.py
+
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         old = state_to_features(old_game_state)
         new = state_to_features(new_game_state)
@@ -105,12 +118,14 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(GOLDRUSH)
         if wrong_way(old, new):
             events.append(WRONGWAY)
+        if not way_to_go2(new):
+            events.append(WRONGLINE)
         self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
-        y_t = construct_Y(self)
-        transition_list_to_data(self, Ys=y_t)
-        update_model(self)
+        y_t = construct_Y(self) # todo: correct this
+        transition_list_to_data(self, Ys=y_t) # todo correct this
+        update_model(self) #todo: correct this
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
 
@@ -126,6 +141,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.oldstate = last_game_state
     self.newstate = None
+    if self.call == last_action:
+        print("Last game state is next game state")
 
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     if last_game_state is not None and last_action is not None:
@@ -147,7 +164,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
-    self.LEARN_RATE = self.LEARN_RATE * 0.95 + 0.03
+    self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/1000) * 0.8
 
 
 def unique(a):
@@ -160,10 +177,10 @@ def unique(a):
 
 
 def update_model(self):
-    y_old = self.data[:,-1].copy()
+    y_old = self.data[:, -1].copy() # should remain
     self.model = MyModel()
     self.model.train(self.data)
-    update_y(self)
+    update_y(self) # must change
     y_new = self.data[:,-1].copy()
     diff = np.linalg.norm(y_old-y_new)
     print(f"Difference in Y- Calculation: {diff}")
@@ -247,14 +264,14 @@ def measure_performance(self, events: List[str]):
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(max_depth=100, random_state=0)
+        self.forest = RandomForestRegressor(min_samples_split=10, random_state=0)
         self.reduction = False
 
     def predict(self, instance):
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(max_depth=100, random_state=0)
+        self.forest = RandomForestRegressor(min_samples_split = 10, bootstrap =True, random_state=0)
         if data.shape[0] >= 1600:
             data = data[np.random.choice(data.shape[0], 1600), :]
         self.forest.fit(data[:, :-1], data[:, -1])
@@ -281,8 +298,8 @@ def way_to_go(last_state, next_state):
 
 
 def way_to_go2(next_state):
-    if (next_state[0, -12] == 0 or next_state[0, -11] == 0) and (next_state[0, -12] < 3 or next_state[0, -11] < 3) \
-            and (next_state[0, -12] != next_state[0, -11]):
+    if (next_state[0, -12] == 0 or next_state[0, -11] == 0) and \
+            (np.abs(next_state[0, -12]) < 3 and np.abs(next_state[0, -11]) < 3):
         return True
     else:
         return False

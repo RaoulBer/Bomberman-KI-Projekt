@@ -23,7 +23,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 1
+    self.random_prob = 0.8
 
     if self.train:
         self.model = False
@@ -52,7 +52,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = self.random_prob * 0.88 + 0.02
+        self.random_prob = np.exp(-(game_state["round"] + 1)/1000)
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -85,6 +85,8 @@ def state_to_features(game_state: dict) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
+        print("game state is none")
+        game_state["step"]
         return None
 
     s0, s1 = game_state["self"][3]
