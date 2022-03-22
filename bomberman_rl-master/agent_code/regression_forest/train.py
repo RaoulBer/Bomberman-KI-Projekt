@@ -14,16 +14,8 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
-"""
-IMPORTANT:
-old_game_state:  Last step, (s_t-1)
-self_action: action after new_game_state (on basis of new game state), (a_t)
-new_game_state: actual game state,  (s_t)
-events: events between old_game_state and new_game_state (Basis for r_t)
---> What do we need: Link state of next step with reward this reward.
-"""
 
-TRANSITION_HISTORY_SIZE = 15  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 10  # keep only ... last transitions
 # Events
 GOLDSEARCH = "GOLDSEARCH"
 ENEMYINLINE = "ENEMYINLINE"
@@ -40,31 +32,34 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 10,
+        e.COIN_COLLECTED: 6,
         e.KILLED_OPPONENT: 0,
         e.GOT_KILLED: -5,
         e.KILLED_SELF: 3,
-        e.WAITED: -0.5,
+        e.WAITED: -1.5,
         e.CRATE_DESTROYED: 0,
         e.INVALID_ACTION: -2,
-        e.BOMB_DROPPED: -0.5,
+        e.BOMB_DROPPED: -1.5,
         e.SURVIVED_ROUND: 3,
         e.BOMBTHREAD: -4,
-        e.GOLDSEARCH: 3,
+        e.GOLDSEARCH: 2,
         e.ENEMYINLINE: 1,
         e.GOLDRUSH: 1,
         e.OPPONENT_ELIMINATED: 0,
-        e.WRONGWAY: -3,
+        e.WRONGWAY: -2,
         e.WRONGLINE: -1,
-        # e.MOVED_LEFT: 1.5,
-        # e.MOVED_RIGHT: 1.5,
-        # e.MOVED_UP: 1.5,
-        # e.MOVED_DOWN: 1.5
+        e.MOVED_LEFT: -0.5,
+        e.MOVED_RIGHT: -0.5,
+        e.MOVED_UP: -0.5,
+        e.MOVED_DOWN: -0.5
     }
+    #coin = False
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
+            #if event == e.WRONGWAY:
+                #coin = True
     if len(self.transitions) > 3:
         if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
             reward_sum -= 2
@@ -88,20 +83,18 @@ def setup_training(self):
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
     self.LEARN_RATE = 0.8
+    self.re_overview = []
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
-    self.call = self_action
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # Idea: Add your own events to hand out rewards
 
-    with open("rewards.pt", "rb") as file:
-        re = pickle.load(file)
-    re.append(reward_from_events(self, events)) # if needed: change to measure_performance instead of reward_from_events
-    with open("rewards.pt", "wb") as file:
-        pickle.dump(re, file)
+
     self.oldstate = old_game_state
     self.newstate = new_game_state
+
+    self.re_overview.append(reward_from_events(self, events))
 
     # state_to_features is defined in callbacks.py
 
@@ -141,8 +134,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.oldstate = last_game_state
     self.newstate = None
-    if self.call == last_action:
-        print("Last game state is next game state")
 
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     if last_game_state is not None and last_action is not None:
@@ -154,9 +145,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     transition_list_to_data(self, Ys=y_t)
     update_model(self)
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
-    uni = unique(self.data)
-    self.data = self.data[uni,:]
-    self.rewards = self.rewards[uni]
+    # uni = unique(self.data)
+    # self.data = self.data[uni,:]
+    # self.rewards = self.rewards[uni]
     assert self.rewards.size == self.data.shape[0]
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
@@ -164,7 +155,16 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
-    self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/1000) * 0.8
+    self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 0.4
+    print(f"Gamma: {self.LEARN_RATE}")
+    print(f"Epsilon:{self.random_prob}")
+
+    with open("rewards.pt", "rb") as file:
+        re = pickle.load(file)
+    re.append(np.mean(self.re_overview)) # if needed: change to measure_performance instead of reward_from_events
+    with open("rewards.pt", "wb") as file:
+        pickle.dump(re, file)
+    self.re_overview = []
 
 
 def unique(a):
@@ -177,15 +177,16 @@ def unique(a):
 
 
 def update_model(self):
-    y_old = self.data[:, -1].copy() # should remain
+    y_old = self.data[:, -1].copy()
     self.model = MyModel()
     self.model.train(self.data)
     update_y(self) # must change
-    y_new = self.data[:,-1].copy()
+    y_new = self.data[:, -1].copy()
     diff = np.linalg.norm(y_old-y_new)
     print(f"Difference in Y- Calculation: {diff}")
     if diff <= 1:
         print("no changes")
+        raise Exception
         throwerror()
 
 

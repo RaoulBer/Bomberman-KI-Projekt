@@ -52,7 +52,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/1000)
+        self.random_prob = np.exp(-(game_state["round"] + 1)/300)*0.8 + 0.1
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -164,7 +164,6 @@ def possible_steps(game_state: dict):
     if game_state is None:
         return np.array([0, 1, 2, 3, 4, 5])
     playerx, playery = game_state["self"][3]
-
     #UP
     if (game_state["field"][playerx][playery-1] == 0):
         validAction.append(0)
@@ -208,7 +207,6 @@ def return_doubles1(feature):
     places = (feature == 99).nonzero()[1]
     take_from = places - 2
     return places, take_from
-
 
 
 def return_doubles2(feature):
