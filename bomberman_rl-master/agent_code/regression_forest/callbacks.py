@@ -52,7 +52,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/300)*0.8 + 0.1
+        self.random_prob = np.exp(-(game_state["round"] + 1)/600)*0.8 + 0.1
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -69,7 +69,7 @@ def act(self, game_state: dict) -> str:
         data = np.empty((1, game_state_use.size + 1))
         data[0, :-1] = game_state_use
         data[0, -1] = i
-        data = make_dependencies(data, i)
+        #data = make_dependencies(data, i)
         mod = self.model.predict(data)
         if mod > highest_known:
             highest_known = mod
@@ -100,13 +100,13 @@ def state_to_features(game_state: dict) -> np.array:
 
 
 def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
-    features = np.zeros((1, 6+48))
+    features = np.zeros((1, 6+46))
     features[0, 0] = game_state["round"]
     features[0, 1] = np.floor(game_state["step"] / 100)
     features[0, 2] = s0
     features[0, 3] = s1
-    features[0, 4] = 99
-    features[0, 5] = 99
+    #features[0, 4] = 99
+    #features[0, 5] = 99
     field = game_state["field"]
     mask2 = np.ones(shape=field.shape, dtype=bool)
     mask1 = np.zeros(shape=field.shape, dtype=bool)
@@ -116,19 +116,20 @@ def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
     expl_crates = game_state["explosion_map"][mask1.nonzero()]
     field = field[mask1.nonzero()]
     expl_crates = - expl_crates[mask2.nonzero()] + field[mask2.nonzero()]
-    features[0, 6:expl_crates.size + 6] = 3 * expl_crates.flatten()
+    features[0, 4:expl_crates.size + 4] = 3 * expl_crates.flatten()
 
-    assert features.shape == (1, 54)
+    assert features.shape == (1, 52)
     return features
 
 
 def parse_bombspots(game_state: dict, s0, s1) -> np.array:
-    bombs = np.zeros((4, 5))
+    bombs = np.zeros((4, 3))
     b = sorted(game_state["bombs"], key=lambda x: (s0 - x[0][0]) ** 2 + (s1 - x[0][1]) ** 2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], 99, 99, bomb[1]])
-    return bombs.reshape(1, 20)
+            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], bomb[1]])
+            #bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], 99, 99, bomb[1]])
+    return bombs.reshape(1, 12)
 
 
 def parse_players(game_state: dict, s0, s1) -> np.array:
@@ -140,22 +141,34 @@ def parse_players(game_state: dict, s0, s1) -> np.array:
                 break
             if other[2]:
                 players[i, :] = np.array(
-                    [s0 - other[-1][0], s1 - other[-1][1],  99, 99, -1])
+                    #[s0 - other[-1][0], s1 - other[-1][1],  99, 99, -1])
+                    [np.sign(s0 - other[-1][0]), np.sign(s1 - other[-1][1]), -1])
             else:
                 players[i, :] = np.array(
-                    [s0 - other[-1][0], s1 - other[-1][1],  99, 99, 1])
-    return players.reshape(1, 15)
+                    [np.sign(s0 - other[-1][0]), np.sign(s1 - other[-1][1]), 1])
+                    #[s0 - other[-1][0], s1 - other[-1][1],  99, 99, 1])
+    return players.reshape(1, 9)
 
 
 def parse_coins(game_state, s0, s1) -> np.array:
-    coins = np.zeros((3, 4))
+    coins = np.zeros((1, 2))
     c = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)
     if c is not None:
         for i, coin in enumerate(c):
-            if coin is None or i == 3:
+            if coin is None or i == 1:
                 break
-            coins[i, :] = np.array([s0 - coin[0], s1 - coin[1],  99, 99])
-    return coins.reshape(1, 12)
+            coins[i, :] = np.array([np.sign(s0 - coin[0]), np.sign(s1 - coin[1])])
+    return coins.reshape(1, 2)
+
+def parse_danger(game_state, s0, s1):
+    out = np.zeros((1,5))
+    b = sorted(game_state["bombs"], key=lambda x: (s0 - x[0][0]) ** 2 + (s1 - x[0][1]) ** 2)
+    if b is None:
+        return out
+    for bomb in b:
+        if (s0 - bomb[0][0] == 0 or s1 - bomb[0][1] == 0) and (s0 - bomb[0][0] <= 3 or s1 - bomb[0][1] <= 3):
+            out[0,1] = 1
+        if game_state["field"][s0+1, s1] - bomb[0][0] == 1:
 
 
 
