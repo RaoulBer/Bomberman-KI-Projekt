@@ -16,30 +16,34 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
 #factors determining explorative behaviour
-epsilon = 0.1
-epsilon_decay = 0.99995
-epsilon_min = 0.10
+epsilon = 1.0
+epsilon_decay = 0.9995
+epsilon_min = 0.05
 
 
 #model parameters
 action_size = len(ACTIONS)
-gamma = 0.90
+gamma = 0.99
 learning_rate = 0.0001
-fc1Dim = 121
-fc2Dim = 60
-input_dims = 242
+fc1Dim = 256
+fc2Dim = 128
+input_dims = 576
 
 class Model(nn.Module):
-    def __init__(self, lr, input_channels, fc1_dims, fc2_dims, n_actions):
+    def __init__(self, lr, input_dims, fc1_dims, fc2_dims, n_actions):
         super(Model, self).__init__()
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
-        self.fc_input_dims = input_channels
+        self.fc_input_dims = input_dims
         self.n_actions = n_actions
-        self.input_channels = input_channels
         self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
+
+        self.conv1 = nn.Conv2d(2,32,kernel_size=3)
+        self.conv2 = nn.Conv2d(32,64, kernel_size=3)
+
+        self.pool = nn.MaxPool2d((2,2), ceil_mode=True)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
@@ -47,7 +51,12 @@ class Model(nn.Module):
         self.to(self.device)
 
     def forward(self, state):
-        x = F.relu(self.fc1(state))
+        x = self.conv1(state)
+        x = self.pool(x)
+        x = self.conv2(x)
+        #x = self.pool(x)
+        x = x.reshape(-1, 576)
+        x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         actions = self.fc3(x)
 
@@ -56,7 +65,7 @@ class Model(nn.Module):
 
 def build_model(lr = learning_rate, inputDim= input_dims, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
                 n_actions=len(ACTIONS)):
-    return Model(lr = lr, input_channels = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
+    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
 
 
 def setup(self):
@@ -169,13 +178,13 @@ def excludeInvalidActions(game_state: dict, q_values_tensor):
 
     return excluded_qs
 
-def aroundAgent(game_state: dict, input_field, isbombarray = False) -> np.array:
+def aroundAgent(game_state: dict, input_field, isbombarray = False) -> T.tensor:
     #returns a 5 +/- array of the input_field around the agents position
     playerx, playery = game_state["self"][3]
     if isbombarray:
-        returnarray = np.zeros((11,11))
+        returnarray = T.zeros((11,11))
     else:
-        returnarray = -np.ones((11,11))
+        returnarray = -T.ones((11,11))
 
     for i in range(-5,6):
         for j in range(-5,6):
@@ -193,16 +202,16 @@ def parseStep(game_state: dict) -> int:
         return 0
 
 
-def parseField(game_state: dict) -> np.array:
+def parseField(game_state: dict) -> T.tensor:
     try:
-        return np.array(game_state["field"])
+        return T.tensor(game_state["field"], dtype=T.float)
     except ValueError:
         print("Value error in field parser")
 
 
-def parseExplosionMap(game_state: dict) -> np.array:
+def parseExplosionMap(game_state: dict) -> T.tensor:
     try:
-        return np.array(game_state["explosion_map"])
+        return T.tensor(game_state["explosion_map"])
     except ValueError:
         print("Value error in explosion map parser")
 
@@ -210,24 +219,39 @@ def parseExplosionMap(game_state: dict) -> np.array:
 def parseBombs(game_state: dict, deadly_map):
     try:
         for bomb in game_state["bombs"]:
-            deadly_map[bomb[0][0]][bomb[0][1]] = -bomb[1] - 1
+            bombx, bomby = bomb[0]
+            #On bombsite
+            deadly_map[bombx,bomby] = -(bomb[1] - 1) / 4
+            ##Tile is above bomb
+            if game_state["field"][bombx][bomby-1] != -1:
+                deadly_map[bombx,bomby-3:bomby] = -(bomb[1] - 1)/4
+            ##Tile is below bomb
+            if game_state["field"][bombx][bomby+1] != -1:
+                deadly_map[bombx,bomby:bomby+3] = -(bomb[1] - 1)/4
+            ##Tile is left to bomb
+            if game_state["field"][bombx-1][bomby] != -1:
+                deadly_map[bombx-3:bombx,bomby] = -(bomb[1] - 1)/4
+            ##Tile is right to bomb
+            if game_state["field"][bombx+1][bomby] != -1:
+                deadly_map[bombx:bombx+3,bomby] = -(bomb[1] - 1)/4
+
     except ValueError:
         print("Value Error in bomb parser")
 
 
-def parseCoins(game_state: dict, objective_map) -> np.array:
+def parseCoins(game_state: dict, objective_map):
     try:
         for coin in game_state["coins"]:
-            objective_map[coin[0]][coin[1]] = 5
+            objective_map[coin[0]][coin[1]] = 0.1
     except ValueError:
         print("Value Error in coin parser")
 
 def parseSelf(game_state: dict, objective_map):
     try:
         if game_state["self"][2]:
-            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = 1
+            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = 0.7
         else:
-            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = -1
+            objective_map[game_state["self"][3][0]][game_state["self"][3][1]] = -0.7
     except ValueError:
         print("Error in Self parser")
 
@@ -235,7 +259,7 @@ def parseSelf(game_state: dict, objective_map):
 def parseOthers(game_state: dict, objective_map):
     try:
         for other in game_state["others"]:
-            objective_map[other[3][0]][other[3][1]] = 50
+            objective_map[other[3][0]][other[3][1]] = 0.5
 
     except ValueError:
         print("Value error in Others parser")
@@ -256,7 +280,7 @@ def state_to_features(game_state: dict):
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return np.array([0])
+        return T.tensor([0])
 
     objective_map = parseField(game_state)
     parseCoins(game_state, objective_map)
@@ -270,7 +294,7 @@ def state_to_features(game_state: dict):
     objective_map = aroundAgent(game_state, objective_map, False)
     deadly_map = aroundAgent(game_state, deadly_map, True)
 
-    output_vector = np.append(objective_map.flatten(), deadly_map.flatten())
+    #output_vector = np.append(objective_map.flatten(), deadly_map.flatten())
     #output_vector = np.append(output_vector, validactions)
-
-    return T.tensor(output_vector).float()
+    returnvariable = T.stack((objective_map, deadly_map)).float()
+    return returnvariable
