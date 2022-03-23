@@ -143,10 +143,10 @@ def parse_players(game_state: dict, s0, s1) -> np.array:
             if other[2]:
                 players[i, :] = np.array(
                     #[s0 - other[-1][0], s1 - other[-1][1],  99, 99, -1])
-                    [np.sign(s0 - other[-1][0]), np.sign(s1 - other[-1][1]), -1])
+                    [s0 - other[-1][0], s1 - other[-1][1], -1])
             else:
                 players[i, :] = np.array(
-                    [np.sign(s0 - other[-1][0]), np.sign(s1 - other[-1][1]), 1])
+                    [s0 - other[-1][0], s1 - other[-1][1], 1])
                     #[s0 - other[-1][0], s1 - other[-1][1],  99, 99, 1])
     return players.reshape(1, 9)
 

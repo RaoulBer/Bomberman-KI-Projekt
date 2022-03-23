@@ -170,7 +170,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(re, file)
     self.re_overview = []
 
-
+"""
 def unique(a):
     order = np.lexsort(a.T)
     a = a[order]
@@ -178,6 +178,8 @@ def unique(a):
     ui = np.ones(len(a), 'bool')
     ui[1:] = (diff != 0).any(axis=1)
     return ui
+"""
+
 
 
 def update_model(self):
@@ -188,7 +190,7 @@ def update_model(self):
     y_new = self.data[:, -1].copy()
     diff = np.linalg.norm(y_old-y_new)
     print(f"Difference in Y- Calculation: {diff}")
-    if self.oldstate["round"] / 1000 == 0:
+    if self.oldstate["round"] % 1000 == 0:
         print(f"Importance of features: {self.model.forest.feature_importances_}")
     if diff <= 1:
         print("no changes")
