@@ -46,8 +46,8 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
 
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 242), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 242), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 2,11,11), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 2,11,11), dtype=np.float32)
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -168,7 +168,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         if self.ITERATION_COUNTER % 100 == 0:
             T.save(self.model, "model.pt")
-            print(summary(self.model,[64,242],depth=4))
+            print(summary(self.model,[64,2,11,11],depth=6))
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -179,16 +179,19 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.CRATE_DESTROYED: 5,
-        e.COIN_COLLECTED: 5,
-        e.KILLED_OPPONENT: 10,
+        e.MOVED_UP: -1,
+        e.MOVED_DOWN: -1,
+        e.MOVED_LEFT: -1,
+        e.MOVED_RIGHT: -1,
+        e.CRATE_DESTROYED: 10,
+        e.COIN_COLLECTED: 12,
+        e.KILLED_OPPONENT: 20,
         e.GOT_KILLED: -10,
-        e.KILLED_SELF: -12,
-        e.WAITED: -5,
-        e.INVALID_ACTION: -10,
-        e.BOMB_DROPPED: -2,
-        e.SURVIVED_ROUND: 20,
-        e.IN_CIRCLES: -20
+        e.KILLED_SELF: -10,
+        e.WAITED: -1,
+        e.INVALID_ACTION: -2,
+        e.BOMB_DROPPED: -1,
+        e.SURVIVED_ROUND: 20
     }
     reward_sum = 0
     for event in events:
