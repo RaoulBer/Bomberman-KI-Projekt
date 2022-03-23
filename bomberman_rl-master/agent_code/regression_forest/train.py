@@ -8,6 +8,7 @@ from .callbacks import state_to_features
 from .callbacks import possible_steps
 from sklearn.ensemble import RandomForestRegressor
 from .callbacks import make_dependencies
+from .callbacks import parse_danger
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
@@ -16,7 +17,7 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 
-TRANSITION_HISTORY_SIZE = 10  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 20  # keep only ... last transitions
 # Events
 GOLDSEARCH = "GOLDSEARCH"
 ENEMYINLINE = "ENEMYINLINE"
@@ -109,7 +110,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(GOLDSEARCH)
         if face_opponent(new):
             events.append(ENEMYINLINE)
-        if in_bombs_way(new):
+        if in_bombs_way(self.newstate):
             events.append(BOMBTHREAD)
         if way_to_go2(new):
             events.append(GOLDRUSH)
@@ -158,7 +159,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
-    self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 1.0
+    #self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 80
     print(f"Gamma: {self.LEARN_RATE}")
     print(f"Epsilon:{self.random_prob}")
 
@@ -192,7 +193,6 @@ def update_model(self):
     if diff <= 1:
         print("no changes")
         raise Exception
-        throwerror()
 
 
 def update_y(self):
@@ -235,7 +235,7 @@ def transition_list_to_data(self, Ys):
 def construct_Y(self):
     Y = []
     for transition in self.transitions:
-        if transition[2] is None:
+        if transition[2] is None or len(self.transitions) < TRANSITION_HISTORY_SIZE:
             Y.append(transition[-1])
             continue
         elif self.model:
@@ -277,14 +277,15 @@ class MyModel:
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(min_samples_split = 10, bootstrap =True, random_state=0)
+        self.forest = RandomForestRegressor(min_samples_split = 5, bootstrap =True, random_state=0)
         if data.shape[0] >= 1600:
             data = data[np.random.choice(data.shape[0], 1600), :]
         self.forest.fit(data[:, :-1], data[:, -1])
 
 
 def in_bombs_way(next):
-    if (next[0, 55] == 0 or next[0, 56] == 0) and (next[0, 55] < 3 or next[0, 56] < 3):
+    s0, s1 = next["self"][3]
+    if (parse_danger(next, s0, s1) != 0).any():
         return True
     else:
         return False
@@ -293,8 +294,8 @@ def in_bombs_way(next):
 def way_to_go(transitions):
     if len(transitions) < 2:
         return False
-    coins_next = transitions[-1][0][0, -12:]
-    coins_last = transitions[-2][0][0, -12:]
+    coins_next = transitions[-1][0][0, -2:]
+    coins_last = transitions[-2][0][0, -2:]
     coins_next = coins_next[(coins_next != 99).nonzero()]
     coins_last = coins_last[(coins_last != 99).nonzero()]
     coins_last = coins_last.reshape(int(coins_last.size/2), 2)
@@ -306,28 +307,23 @@ def way_to_go(transitions):
 
 
 def way_to_go2(old_state):
-    if (old_state[0, -12] == 0 or old_state[0, -11] == 0) and \
-            (np.abs(old_state[0, -12]) < 5 and np.abs(old_state[0, -11]) < 5):
+    if (old_state[0, -2] == 0 and np.abs(old_state[0, -2]) < 5) or (old_state[0, -1] == 0 and np.abs(old_state[0, -2]) < 5):
         return True
     else:
         return False
 
 
 def face_opponent(next_state):
-    if (next_state[0, 70] == 0 or next_state[0, 71] == 0) and (next_state[0, 70] < 3 or next_state[0, 71] < 3):
+    if (next_state[0, 5] == 0 or next_state[0, 6] == 0) and (next_state[0, 5] < 3 or next_state[0, 6] < 3):
         return True
     else:
         return False
 
 
 def wrong_way(last_state, next_state):
-    coins_next = next_state[0, -12:]
-    coins_last = last_state[0, -12:]
-    coins_next = coins_next[(coins_next != 99).nonzero()]
-    coins_last = coins_last[(coins_last != 99).nonzero()]
-    coins_last = coins_last.reshape(int(coins_last.size / 2), 2)
-    coins_next = coins_next.reshape(int(coins_next.size/2), 2)
-    if np.sum(np.linalg.norm(coins_last, axis=1)[0]) <= np.sum(np.linalg.norm(coins_next, axis=1)[0]):
+    coins_next = next_state[0, -2:]
+    coins_last = last_state[0, -2:]
+    if np.sum(np.linalg.norm(coins_last, axis=0)) <= np.sum(np.linalg.norm(coins_next, axis=0)):
         return True
     else:
         return False

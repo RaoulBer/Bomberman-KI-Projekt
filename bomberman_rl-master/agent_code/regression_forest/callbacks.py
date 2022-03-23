@@ -23,7 +23,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 0.8
+    self.random_prob = 0.9
 
     if self.train:
         self.model = False
@@ -52,7 +52,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/600)*0.8 + 0.1
+        self.random_prob = np.exp(-(game_state["round"] + 1)/700)*0.8 + 0.15
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -79,28 +79,28 @@ def act(self, game_state: dict) -> str:
 
 def state_to_features(game_state: dict) -> np.array:
     """
-    :param self: Stuff
     :param game_state:  A dictionary describing the current game board.
     :return: np.array
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
         print("game state is none")
-        game_state["step"]
         return None
 
     s0, s1 = game_state["self"][3]
-    features = parse_field_orientation(game_state, s0, s1)
-    bombs = parse_bombspots(game_state, s0, s1)
+    #features = parse_field_orientation(game_state, s0, s1)
+    #bombs = parse_bombspots(game_state, s0, s1)
     players = parse_players(game_state, s0, s1)
     coins = parse_coins(game_state, s0, s1)
-    out = np.concatenate((features, players, bombs, coins), axis=1)
+    danger = parse_danger(game_state, s0, s1)
+    crate = parse_crate(game_state, s0, s1)
+    out = np.concatenate((danger, players, crate, coins), axis=1)
     assert out.shape[0] == 1
     return out
 
 
 def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
-    features = np.zeros((1, 6+46))
+    features = np.zeros((1, 4+25))
     features[0, 0] = game_state["round"]
     features[0, 1] = np.floor(game_state["step"] / 100)
     features[0, 2] = s0
@@ -110,7 +110,7 @@ def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
     field = game_state["field"]
     mask2 = np.ones(shape=field.shape, dtype=bool)
     mask1 = np.zeros(shape=field.shape, dtype=bool)
-    mask1[np.max([0, s0 - 4]):np.min([16, s0 + 4]), np.max([0, s1 - 4]):np.min([16, s1 + 4])] = True
+    mask1[np.max([0, s0 - 2]):np.min([16, s0 + 2]), np.max([0, s1 - 2]):np.min([16, s1 + 2])] = True
     mask2[field == -1] = False
     mask2 = mask2[mask1.nonzero()]
     expl_crates = game_state["explosion_map"][mask1.nonzero()]
@@ -127,13 +127,14 @@ def parse_bombspots(game_state: dict, s0, s1) -> np.array:
     b = sorted(game_state["bombs"], key=lambda x: (s0 - x[0][0]) ** 2 + (s1 - x[0][1]) ** 2)
     if b is not None:
         for i, bomb in enumerate(b):
-            bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], bomb[1]])
+            bombx, bomby = bomb[0]
+            bombs[i, :] = np.array([s0 - bombx, s1 - bomby, bomb[1]])
             #bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], 99, 99, bomb[1]])
     return bombs.reshape(1, 12)
 
 
 def parse_players(game_state: dict, s0, s1) -> np.array:
-    players = np.zeros((3, 5))
+    players = np.zeros((3, 3))
     others = sorted(game_state["others"], key=lambda x: (s0 - x[-1][0]) ** 2 + (s1 - x[-1][1]) ** 2)
     if others is not None:
         for i, other in enumerate(others):
@@ -157,19 +158,46 @@ def parse_coins(game_state, s0, s1) -> np.array:
         for i, coin in enumerate(c):
             if coin is None or i == 1:
                 break
-            coins[i, :] = np.array([np.sign(s0 - coin[0]), np.sign(s1 - coin[1])])
+            coins[i, :] = np.array([s0 - coin[0], s1 - coin[1]])
     return coins.reshape(1, 2)
 
 def parse_danger(game_state, s0, s1):
-    out = np.zeros((1,5))
+    out = np.zeros((1, 5))
     b = sorted(game_state["bombs"], key=lambda x: (s0 - x[0][0]) ** 2 + (s1 - x[0][1]) ** 2)
     if b is None:
         return out
     for bomb in b:
-        if (s0 - bomb[0][0] == 0 or s1 - bomb[0][1] == 0) and (s0 - bomb[0][0] <= 3 or s1 - bomb[0][1] <= 3):
-            out[0,1] = 1
-        if game_state["field"][s0+1, s1] - bomb[0][0] == 1:
+        bombx, bomby = bomb[0]
+        if (s0 - bombx == 0 and s1 - bomby <= 3) or (s1 - bomby == 0 and s0 - bombx <= 3):
+            out[0,0] = -1
+        if (s0 + 1 - bombx == 0 and s1 - bomby <= 3) or (s1 - bomby == 0 and s0 + 1 - bombx <= 3):
+            out[0, 1] = -1
+        if (s0 - 1 - bombx == 0 and s1 - bomby <= 3) or (s1 - bomby == 0 and s0 - 1 - bombx <= 3):
+            out[0,2] = -1
+        if (s0 - bombx == 0 or s1 + 1 - bomby == 0) and (s0 - bomb[0][0] <= 3 or s1 + 1 - bomb[0][1] <= 3):
+            out[0, 3] = -1
+        if (s0 - bombx == 0 and s1 + 1 - bomb[0][1] <= 3)  or (s1 + 1 - bomby == 0 and s0 - bomb[0][0] <= 3):
+            out[0,4] = -1
+    if game_state["explosion_map"][s0, s1] != 0:
+            out[0, 0] = -2
+    if game_state["explosion_map"][s0+1, s1] != 0:
+            out[0, 1] = -2
+    if game_state["explosion_map"][s0 -1, s1] != 0:
+            out[0, 2] = -2
+    if game_state["explosion_map"][s0, s1 +1] != 0:
+            out[0, 3] = -2
+    if game_state["explosion_map"][s0, s1 -1] != 0:
+            out[0, 4] = -2
+    return out
 
+def parse_crate(game_state, s0, s1):
+    crates = (game_state["field"] == 1).nonzero()
+    c0 = crates[0] - s0
+    c1 = crates[1] - s1
+    crates = np.linalg.norm(np.stack((c0, c1), axis=0), axis=0)
+    assert crates.size == c1.size
+    index = np.argmin(crates)
+    return np.array([np.sign(c0[index]), np.sign(c1[index])]).reshape(1,2)
 
 
 def possible_steps(game_state: dict):
