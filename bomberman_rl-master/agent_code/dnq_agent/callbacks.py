@@ -2,14 +2,12 @@ import os
 import pickle
 import random
 import numpy as np
-
 import torch as T
-import torch.nn
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import itertools
-
+from collections import deque
 import settings
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
@@ -17,17 +15,17 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 #factors determining explorative behaviour
 epsilon = 1.0
-epsilon_decay = 0.9995
+epsilon_decay = 0.99995
 epsilon_min = 0.05
 
 
 #model parameters
 action_size = len(ACTIONS)
-gamma = 0.99
+gamma = 0.80
 learning_rate = 0.0001
-fc1Dim = 256
-fc2Dim = 128
-input_dims = 576
+fc1Dim = 9
+fc2Dim = 8
+input_dims = 10
 
 class Model(nn.Module):
     def __init__(self, lr, input_dims, fc1_dims, fc2_dims, n_actions):
@@ -37,35 +35,23 @@ class Model(nn.Module):
         self.fc_input_dims = input_dims
         self.n_actions = n_actions
         self.fc1 = nn.Linear(self.fc_input_dims, self.fc1_dims)
-        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
-        self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
-
-        self.conv1 = nn.Conv2d(2,32,kernel_size=3)
-        self.conv2 = nn.Conv2d(32,64, kernel_size=3)
-
-        self.pool = nn.MaxPool2d((2,2), ceil_mode=True)
-
+        self.fc2 = nn.Linear(self.fc1_dims, self.n_actions)
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.device = T.device('cuda:0' if False else 'cpu')
         self.to(self.device)
 
     def forward(self, state):
-        x = self.conv1(state)
-        x = self.pool(x)
-        x = self.conv2(x)
-        #x = self.pool(x)
-        x = x.reshape(-1, 576)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        actions = self.fc3(x)
+        x = F.relu(self.fc1(state))
+        actions = self.fc2(x)
 
         return actions
 
 
 def build_model(lr = learning_rate, inputDim= input_dims, fc1Dim= fc1Dim, fc2Dim=fc2Dim,
                 n_actions=len(ACTIONS)):
-    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
+    return Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions), \
+           Model(lr = lr, input_dims = inputDim, fc1_dims = fc1Dim, fc2_dims = fc2Dim, n_actions = n_actions)
 
 
 def setup(self):
@@ -82,22 +68,28 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    modelname = "model.pt"
-    modelpath = os.path.join(os.getcwd(), modelname)
+    evalmodelname = "evalmodel.pt"
+    evalmodelpath = os.path.join(os.getcwd(), evalmodelname)
 
-    if self.train and not os.path.isfile(os.path.join(os.getcwd(), modelname)):
+    nextmodelname = "nextmodel.pt"
+    nextmodelpath = os.path.join(os.getcwd(), nextmodelname)
+
+
+    if self.train and not os.path.isfile(os.path.join(os.getcwd(), evalmodelname)):
         self.logger.info("Setting up model from scratch.")
         print("Setting up model from scratch.")
-        self.model = build_model()
+        self.nextmodel, self.evalmodel = build_model()
 
-    elif self.train and os.path.isfile(os.path.join(os.getcwd(), modelname)):
+    elif self.train and os.path.isfile(os.path.join(os.getcwd(), evalmodelname)):
         print("Loading model from saved state.")
-        self.model = T.load(modelpath)
+        self.evalmodel = T.load(evalmodelpath)
+        self.nextmodel = T.load(nextmodelpath)
 
     else:
         self.logger.info("Loading model from saved state.")
         print("Loading model from saved state.")
-        self.model = T.load(modelpath)
+        self.evalmodel = T.load(evalmodelpath)
+        self.nextmodel = T.load(nextmodelpath)
 
 
 def act(self, game_state: dict) -> str:
@@ -118,8 +110,9 @@ def act(self, game_state: dict) -> str:
         #valids = validAction(game_state)
         #possible_actions = [a for idx, a in enumerate(ACTIONS) if valids[idx]]
         #action_chosen = np.random.choice(possible_actions)
-        action_chosen = np.random.choice(ACTIONS, p=[0.2,0.2,0.2,0.2,0.1,0.1])
+        action_chosen = np.random.choice(ACTIONS, p=[0.2, 0.2, 0.2, 0.2, 0.1, 0.1])
         #print("Action:", action_chosen)
+        #action_chosen = rolemodel.act(self, game_state)
 
         return action_chosen
     #self.logger.debug("Querying model for action.")
@@ -130,7 +123,7 @@ def act(self, game_state: dict) -> str:
     print("prediction of q values: ", self.model.forward(inputvec))
     """
 
-    predicted_q_values = self.model.forward(state_to_features(game_state))
+    predicted_q_values = self.evalmodel.forward(state_to_features(game_state))
     action_chosen = ACTIONS[T.argmax(predicted_q_values)]
     #print("Action: ", action_chosen)
 
@@ -143,10 +136,10 @@ def validAction(game_state: dict):
     playerx, playery = game_state["self"][3]
 
     #UP -- Check for wall or crate or explosion
-    if (game_state["field"][playerx][playery-1] != 0) or isdeadly(playerx,playery-1, game_state):
+    if (game_state["field"][playerx][playery-1] != 0) or isdeadly(playerx, playery-1, game_state):
         validAction[0] = 0
     #RIGHT -- Check for wall or crate or explosion
-    if game_state["field"][playerx+1][playery] != 0 or isdeadly(playerx+1,playery, game_state):
+    if game_state["field"][playerx+1][playery] != 0 or isdeadly(playerx+1, playery, game_state):
         validAction[1] = 0
     #DOWN -- Check for wall or crate or explosion
     if game_state["field"][playerx][playery+1] != 0 or isdeadly(playerx, playery+1, game_state):
@@ -182,9 +175,9 @@ def aroundAgent(game_state: dict, input_field, isbombarray = False) -> T.tensor:
     #returns a 5 +/- array of the input_field around the agents position
     playerx, playery = game_state["self"][3]
     if isbombarray:
-        returnarray = T.zeros((11,11))
+        returnarray = T.zeros((11, 11))
     else:
-        returnarray = -T.ones((11,11))
+        returnarray = -T.ones((11, 11))
 
     for i in range(-5,6):
         for j in range(-5,6):
@@ -202,49 +195,128 @@ def parseStep(game_state: dict) -> int:
         return 0
 
 
-def parseField(game_state: dict) -> T.tensor:
+def parseField(game_state: dict, feature_vector):
     try:
-        return T.tensor(game_state["field"], dtype=T.float)
+        playerx, playery = game_state["self"][3]
+        ##Above agent
+        feature_vector[1] = game_state["field"][playerx][playery-1]
+        ##Right to agent
+        feature_vector[2] = game_state["field"][playerx+1][playery]
+        ##Below Agent
+        feature_vector[3] = game_state["field"][playerx][playery+1]
+        ##Left to Agent
+        feature_vector[4] = game_state["field"][playerx-1][playery]
+        ##Upperleft of agent
+        feature_vector[5] = game_state["field"][playerx-1][playery - 1]
+        ##Upperright to agent
+        feature_vector[6] = game_state["field"][playerx + 1][playery - 1]
+        ##Lowerleft to Agent
+        feature_vector[7] = game_state["field"][playerx - 1][playery + 1]
+        ##Lowerright to Agent
+        feature_vector[8] = game_state["field"][playerx + 1][playery + 1]
+
     except ValueError:
         print("Value error in field parser")
 
 
-def parseExplosionMap(game_state: dict) -> T.tensor:
+def parseExplosionMap(game_state: dict, feature_vector):
     try:
-        return T.tensor(game_state["explosion_map"])
+        playerx, playery = game_state["self"][3]
+        ##Agents position
+        feature_vector[0] = 3 if game_state["explosion_map"][playerx][playery - 1] != 0 else feature_vector[0]
+        ##Above agent
+        feature_vector[1] = 3 if game_state["explosion_map"][playerx][playery - 1] != 0 else feature_vector[1]
+        ##Right to agent
+        feature_vector[2] = 3 if game_state["explosion_map"][playerx + 1][playery] != 0 else feature_vector[2]
+        ##Below Agent
+        feature_vector[3] = 3 if game_state["explosion_map"][playerx][playery + 1] != 0 else feature_vector[3]
+        ##Left to Agent
+        feature_vector[4] = 3 if game_state["explosion_map"][playerx - 1][playery] != 0 else feature_vector[4]
+        ##Upperleft of agent
+        feature_vector[5] = 3 if game_state["explosion_map"][playerx - 1][playery - 1] != 0 else feature_vector[5]
+        ##Upperright to agent
+        feature_vector[6] = 3 if game_state["explosion_map"][playerx + 1][playery - 1] != 0 else feature_vector[6]
+        ##Lowerleft of Agent
+        feature_vector[7] = 3 if game_state["explosion_map"][playerx - 1][playery + 1] != 0 else feature_vector[7]
+        ##Lowerright to Agent
+        feature_vector[8] = 3 if game_state["explosion_map"][playerx + 1][playery + 1] != 0 else feature_vector[8]
     except ValueError:
         print("Value error in explosion map parser")
 
 
-def parseBombs(game_state: dict, deadly_map):
+def parseBombs(game_state: dict, feature_vector):
     try:
+        deadly_map = np.zeros((17, 17))
         for bomb in game_state["bombs"]:
             bombx, bomby = bomb[0]
             #On bombsite
-            deadly_map[bombx,bomby] = -(bomb[1] - 1) / 4
+            deadly_map[bombx, bomby] = bomb[1] + 1
             ##Tile is above bomb
-            if game_state["field"][bombx][bomby-1] != -1:
-                deadly_map[bombx,bomby-3:bomby] = -(bomb[1] - 1)/4
+            if game_state["field"][bombx][bomby - 1] != -1:
+                deadly_map[bombx, bomby-3:bomby] = bomb[1] + 1
             ##Tile is below bomb
-            if game_state["field"][bombx][bomby+1] != -1:
-                deadly_map[bombx,bomby:bomby+3] = -(bomb[1] - 1)/4
+            if game_state["field"][bombx][bomby + 1] != -1:
+                deadly_map[bombx, bomby:bomby+3] = bomb[1] + 1
             ##Tile is left to bomb
-            if game_state["field"][bombx-1][bomby] != -1:
-                deadly_map[bombx-3:bombx,bomby] = -(bomb[1] - 1)/4
+            if game_state["field"][bombx - 1][bomby] != -1:
+                deadly_map[bombx-3:bombx, bomby] = bomb[1] + 1
             ##Tile is right to bomb
-            if game_state["field"][bombx+1][bomby] != -1:
-                deadly_map[bombx:bombx+3,bomby] = -(bomb[1] - 1)/4
-
+            if game_state["field"][bombx + 1][bomby] != -1:
+                deadly_map[bombx:bombx+3, bomby] = bomb[1] + 1
+        playerx, playery = game_state["self"][3]
+        ##On agent position
+        feature_vector[0] = 4 if deadly_map[playerx][playery] != 0 else feature_vector[0]
+        ##Above agent
+        feature_vector[1] = 4 if deadly_map[playerx][playery - 1] != 0 else feature_vector[1]
+        ##Right to agent
+        feature_vector[2] = 4 if deadly_map[playerx + 1][playery] != 0 else feature_vector[2]
+        ##Below Agent
+        feature_vector[3] = 4 if deadly_map[playerx][playery + 1] != 0 else feature_vector[3]
+        ##Left to Agent
+        feature_vector[4] = 4 if deadly_map[playerx - 1][playery] != 0 else feature_vector[4]
+        ##Upperleft to agent
+        feature_vector[5] = 4 if deadly_map[playerx-1][playery - 1] != 0 else feature_vector[5]
+        ##Upperright to agent
+        feature_vector[6] = 4 if deadly_map[playerx + 1][playery-1] != 0 else feature_vector[6]
+        ##Lowerleft to Agent
+        feature_vector[7] = 4 if deadly_map[playerx-1][playery + 1] != 0 else feature_vector[7]
+        ##Lowerright to Agent
+        feature_vector[8] = 4 if deadly_map[playerx + 1][playery + 1] != 0 else feature_vector[8]
     except ValueError:
         print("Value Error in bomb parser")
 
+def parseBombPossible(game_state: dict, feature_vector):
+    if game_state["self"][2]:
+        feature_vector[9] = 1
+    else:
+        feature_vector[9] = 0
 
-def parseCoins(game_state: dict, objective_map):
+
+def parseCoins(game_state: dict, feature_vector):
     try:
+        coinmap = np.zeros((17, 17))
         for coin in game_state["coins"]:
-            objective_map[coin[0]][coin[1]] = 0.1
+            coinmap[coin[0]][coin[1]] = 1
+        playerx, playery = game_state["self"][3]
+        ##Above agent
+        feature_vector[1] = 2 if coinmap[playerx][playery - 1] == 1 else feature_vector[1]
+        ##Right to agent
+        feature_vector[2] = 2 if coinmap[playerx + 1][playery] == 1 else feature_vector[2]
+        ##Below Agent
+        feature_vector[3] = 2 if coinmap[playerx][playery + 1] == 1 else feature_vector[3]
+        ##Left to Agent
+        feature_vector[4] = 2 if coinmap[playerx - 1][playery] == 1 else feature_vector[4]
+        ##Upperleft to agent
+        feature_vector[5] = 2 if coinmap[playerx - 1][playery - 1] == 1 else feature_vector[5]
+        ##Upperright to agent
+        feature_vector[6] = 2 if coinmap[playerx + 1][playery - 1] == 1 else feature_vector[6]
+        ##Lowerleft Agent
+        feature_vector[7] = 2 if coinmap[playerx - 1][playery + 1] == 1 else feature_vector[7]
+        ##Lowerright to Agent
+        feature_vector[8] = 2 if coinmap[playerx + 1][playery + 1] == 1 else feature_vector[8]
     except ValueError:
         print("Value Error in coin parser")
+
 
 def parseSelf(game_state: dict, objective_map):
     try:
@@ -256,11 +328,20 @@ def parseSelf(game_state: dict, objective_map):
         print("Error in Self parser")
 
 
-def parseOthers(game_state: dict, objective_map):
+def parseOthers(game_state: dict, feature_vector):
     try:
+        othersmap = np.zeros((17, 17))
         for other in game_state["others"]:
-            objective_map[other[3][0]][other[3][1]] = 0.5
-
+            othersmap[other[3][0]][other[3][1]] = 1
+        playerx, playery = game_state["self"][3]
+        ##Above agent
+        feature_vector[1] = 6 if othersmap[playerx][playery - 1] == 1 else feature_vector[1]
+        ##Right to agent
+        feature_vector[2] = 6 if othersmap[playerx + 1][playery] == 1 else feature_vector[2]
+        ##Below Agent
+        feature_vector[3] = 6 if othersmap[playerx][playery + 1] == 1 else feature_vector[3]
+        ##Left to Agent
+        feature_vector[4] = 6 if othersmap[playerx - 1][playery] == 1 else feature_vector[4]
     except ValueError:
         print("Value error in Others parser")
 
@@ -280,21 +361,14 @@ def state_to_features(game_state: dict):
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return T.tensor([0])
+        return T.zeros(10)
+    feature_vector = T.zeros(10) #represent the tiles agentpos, up, right, down, left relative to the agent
+    ##upperleft, upperright, lowerleft, lowerright
+    parseField(game_state, feature_vector)
+    parseCoins(game_state, feature_vector)
+    parseOthers(game_state, feature_vector)
+    parseBombs(game_state, feature_vector)
+    parseExplosionMap(game_state, feature_vector)
+    parseBombPossible(game_state, feature_vector)
 
-    objective_map = parseField(game_state)
-    parseCoins(game_state, objective_map)
-    parseSelf(game_state, objective_map)
-    parseOthers(game_state, objective_map)
-
-    deadly_map = parseExplosionMap(game_state)
-    parseBombs(game_state, deadly_map)
-    #validactions = validAction(game_state)
-
-    objective_map = aroundAgent(game_state, objective_map, False)
-    deadly_map = aroundAgent(game_state, deadly_map, True)
-
-    #output_vector = np.append(objective_map.flatten(), deadly_map.flatten())
-    #output_vector = np.append(output_vector, validactions)
-    returnvariable = T.stack((objective_map, deadly_map)).float()
-    return returnvariable
+    return feature_vector
