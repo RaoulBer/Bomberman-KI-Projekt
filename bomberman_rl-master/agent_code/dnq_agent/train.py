@@ -21,9 +21,9 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 300  # keep only ... last transitions
+TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
-batch_size = 64
+batch_size = 128
 
 # Events
 PLACEHOLDER = "PLACEHOLDER"
@@ -46,8 +46,8 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
 
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 2,11,11), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 2,11,11), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 10), dtype=np.float32)
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 10), dtype=np.float32)
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -97,9 +97,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     else:
         self.states[idx] = callbacks.state_to_features(old_game_state)
-        self.nextstates[idx] = callbacks.state_to_features(new_game_state)
+        newstate = callbacks.state_to_features(new_game_state)
+        if newstate[0] == 4:
+            events.append("IN_DANGER")
+        self.nextstates[idx] = newstate
         self.rewards[idx] = reward_from_events(self, events)
-        self.actions[idx] = callbacks.ACTIONS.index(self_action)
+        try:
+            self.actions[idx] = callbacks.ACTIONS.index(self_action)
+        except ValueError:
+            self.actions[idx] = 4
+
         self.terminals[idx] = 0
 
         self.MEMORY_ITERATOR += 1
@@ -118,46 +125,54 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     #self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-
+    if self.MEMORY_ITERATOR % 1000 == 0:
+        self.nextmodel.load_state_dict(self.evalmodel.state_dict())
     idx = (self.MEMORY_ITERATOR % TRANSITION_HISTORY_SIZE) - 1
-    self.states[idx] = callbacks.state_to_features(last_game_state)
+    last_state = callbacks.state_to_features(last_game_state)
+    self.states[idx] = last_state
+    if last_state[0] == 4:
+        events.append("IN_DANGER")
     self.nextstates[idx] = callbacks.state_to_features(None)
     self.rewards[idx] = reward_from_events(self, events)
-    self.actions[idx] = callbacks.ACTIONS.index(last_action)
+    try:
+        self.actions[idx] = callbacks.ACTIONS.index(last_action)
+    except ValueError:
+        self.actions[idx] = 4
+
     self.terminals[idx] = 1
-
     self.MEMORY_ITERATOR += 1
-
     if self.MEMORY_ITERATOR < self.batch_size:
         pass
 
     else:
-        self.model.optimizer.zero_grad()
-        self.model.train(mode=True)     #For Batch normalization and pooling layers
-
+        self.evalmodel.optimizer.zero_grad()
+        self.evalmodel.train(mode=True)                                     #For Batch normalization and pooling layers
         max_mem = min(self.MEMORY_ITERATOR, self.mem_size)
 
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
         batch_idx = np.arange(self.batch_size, dtype=np.int32)
 
-        state_batch = T.tensor(self.states[batch]).to(self.model.device)
-        new_state_batch = T.tensor(self.nextstates[batch]).to(self.model.device)
+        state_batch = T.tensor(self.states[batch]).to(self.evalmodel.device)
+        new_state_batch = T.tensor(self.nextstates[batch]).to(self.evalmodel.device)
         action_batch = self.actions[batch]
-        reward_batch = T.tensor(self.rewards[batch]).to(self.model.device)
-        terminal_batch = T.tensor(self.terminals[batch]).to(self.model.device)
 
-        evaled_temp = self.model.forward(state_batch)
-        evaled = evaled_temp[batch_idx, action_batch]
-        next = self.model.forward(new_state_batch)
+        reward_batch = T.tensor(self.rewards[batch]).to(self.evalmodel.device)
+        terminal_batch = T.tensor(self.terminals[batch]).to(self.evalmodel.device)
+
+        pred = self.evalmodel.forward(state_batch)[batch_idx, action_batch]
+        next = self.nextmodel.forward(new_state_batch)
+        evaled = self.evalmodel.forward(new_state_batch)
+
         next[terminal_batch.long()] = 0.0
-
         target = reward_batch + self.gamma * T.max(next, dim=1)[0]
 
         print("Reward: ", T.sum(reward_batch), end="")
 
-        loss = self.model.loss(target, evaled).to(self.model.device)
+        loss = self.evalmodel.loss(target, pred).to(self.evalmodel.device)
         loss.backward()
-        self.model.optimizer.step()
+        self.evalmodel.optimizer.step()
+
+        ##To have some information about problems concering the gradients
         T.autograd.set_detect_anomaly(True)
 
         self.ITERATION_COUNTER += 1
@@ -167,8 +182,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
 
         if self.ITERATION_COUNTER % 100 == 0:
-            T.save(self.model, "model.pt")
-            print(summary(self.model,[64,2,11,11],depth=6))
+            T.save(self.evalmodel, "evalmodel.pt")
+            T.save(self.nextmodel, "nextmodel.pt")
+            #print(summary(self.model, [64, 10], depth=6))
 
 
 def reward_from_events(self, events: List[str]) -> int:
@@ -184,14 +200,15 @@ def reward_from_events(self, events: List[str]) -> int:
         e.MOVED_LEFT: -1,
         e.MOVED_RIGHT: -1,
         e.CRATE_DESTROYED: 10,
-        e.COIN_COLLECTED: 12,
-        e.KILLED_OPPONENT: 20,
+        e.COIN_COLLECTED: 15,
+        e.KILLED_OPPONENT: 50,
         e.GOT_KILLED: -10,
-        e.KILLED_SELF: -10,
-        e.WAITED: -1,
+        e.KILLED_SELF: -50,
+        e.WAITED: -5,
         e.INVALID_ACTION: -2,
         e.BOMB_DROPPED: -1,
-        e.SURVIVED_ROUND: 20
+        e.SURVIVED_ROUND: 1,
+        e.IN_DANGER: -2
     }
     reward_sum = 0
     for event in events:

@@ -145,6 +145,40 @@ def parse_players(game_state: dict, s0, s1) -> np.array:
     return players.reshape(1, 6)
 
 
+def visitNeighbors(map, goalx, goaly, previous):
+    currentx, currenty = previous[-1]
+    if currentx == goalx and currenty == goaly:
+        return previous
+    #Check up
+    if map[currentx][currenty-1] == 0:
+        visitNeighbors(map, goalx, goaly, previous.append((currentx, currenty-1)))
+    # Check right
+    if map[currentx + 1][currenty] == 0:
+        visitNeighbors(map, goalx, goaly, previous.append((currentx+1, currenty)))
+    # Check down
+    if map[currentx][currenty + 1] == 0:
+        visitNeighbors(map, goalx, goaly, previous.append((currentx, currenty+1)))
+    # Check left
+    if map[currentx - 1][currenty] == 0:
+        visitNeighbors(map, goalx, goaly, previous.append((currentx-1, currenty)))
+
+
+def directionNextCoin(game_state: dict):
+    s0, s1 = game_state["self"][3]
+    map = game_state["field"] + game_state["explosion_map"]
+    closest_coin = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)[0]
+    path = visitNeighbors(map, closest_coin[0], closest_coin[1], [(s0, s1)])
+    next_tile = path[1]  #first element is starting point therefore the second element is the successor
+    if next_tile[0] - s0 == 1:
+        return "RIGHT"
+    if next_tile[0] - s0 == -1:
+        return "LEFT"
+    if next_tile[1] - s1 ==  1:
+        return "DOWN"
+    if next_tile[1] - s0 == -1:
+        return "UP"
+
+
 def parse_coins(game_state, s0, s1) -> np.array:
     coins = np.zeros((1, 2))
     c = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)

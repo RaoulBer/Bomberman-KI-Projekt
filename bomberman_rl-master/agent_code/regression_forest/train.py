@@ -189,7 +189,6 @@ def unique(a):
     ui[1:] = (diff != 0).any(axis=1)
     return ui
 
-
 def update_model(self):
     y_old = self.data[:, -1].copy()
     self.model = MyModel()
