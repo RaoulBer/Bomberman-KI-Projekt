@@ -3,7 +3,7 @@ import pickle
 import random
 from collections import namedtuple, deque
 import numpy as np
-from . import rolemodel as rm
+from . import rolemodel as rm #Auskommentieren für Act morgen!!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 prob = [.2, .2, .2, .2, .1, .1]
 

@@ -185,30 +185,31 @@ def update_model(self):
 
 def update_y(self):
     Y = calculate_y(self)
-    self.data[:, -1] = Y
+    self.data[:-1, -1] = Y
 
 
 def calculate_y(self):
-    proposition = self.model.predict(self.data[:, :-1])
-    y = self.rewards + self.LEARN_RATE * proposition
-    assert y.shape == self.data[:, -1].shape
+    proposition = self.model.predict(self.data[1:, :-1])
+    y = self.rewards[:-1] + self.LEARN_RATE * proposition
+    assert y.shape == self.data[:-1, -1].shape
     return y
 
 
 def transition_list_to_data(self, Ys):
     length = len(self.transitions)
-    assert len(Ys) == length
+    assert len(Ys) == length -1
     if length == 1:
         return 0
-    array = np.empty((length, self.transitions[1][0].size + 2))
-    array[:, -1] = Ys
+    array = np.zeros((length, self.transitions[1][0].size + 2))
+    array[:-1, -1] = Ys
     rewards = np.zeros(length)
     for i, transition in enumerate(self.transitions):
+        if i == len(self.transitions) - 1:
+            break
         if transition[1] is None or transition[0] is None:
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
-        # array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
         rewards[i] = self.transitions[i-1][-1]
     rewards[-1] += self.transitions[-1][-1]
     if np.isnan(array).any():
@@ -225,19 +226,25 @@ def transition_list_to_data(self, Ys):
 
 def construct_Y(self):
     Y = []
-    for transition in self.transitions:
-        if transition[2] is None or len(self.transitions) < TRANSITION_HISTORY_SIZE:
-            Y.append(transition[-1])
+    for i, transition in enumerate(self.transitions):
+        if i == 0:
+            continue
+        if transition[2] is None:
+            Y.append(self.transitions[i-1][-1])
             continue
         elif self.model:
             data = np.empty((1, transition[2].size + 1))
-            data[0, :-1] = transition[2]
+            data[0, :-1] = self.transitions[i][2]
             ret = []
-            for i in possible_steps(self.newstate):
+            for i in possible_steps(None):
                 data[0, -1] = i
-                # ret.append(self.model.predict(make_dependencies(data, i)))
+                if np.isnan(data).any():
+                    continue
                 ret.append(self.model.predict(data))
-            val = np.max(ret)
+            if ret:
+                val = np.max(ret)
+            else:
+                val = 0
         else:
             val = 0
         Y.append(transition[-1] + self.LEARN_RATE * val)
@@ -258,7 +265,7 @@ class MyModel:
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
         try:
-            self.forest.fit(X=data[:, :-1], y=data[:, -1])
+            self.forest.fit(X=data[:-1, :-1], y=data[:-1, -1])
         except:
             print(data[np.argmax(data, axis=0),:])
 
