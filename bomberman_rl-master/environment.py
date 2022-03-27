@@ -131,9 +131,6 @@ class GenericWorld:
 
     def perform_agent_action(self, agent: Agent, action: str):
         # Perform the specified action if possible, wait otherwise
-        if self.movement_counter == 20:
-            agent.add_event(e.IN_CIRCLES)
-            self.movement_counter = 0
         if action == 'UP' and self.tile_is_free(agent.x, agent.y - 1):
             agent.y -= 1
             agent.add_event(e.MOVED_UP)

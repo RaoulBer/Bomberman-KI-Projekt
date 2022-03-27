@@ -9,6 +9,8 @@ import torch.optim as optim
 import itertools
 from collections import deque
 import settings
+from pathfinding.finder.a_star import AStarFinder
+from pathfinding.core.grid import Grid
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
@@ -74,6 +76,8 @@ def setup(self):
     nextmodelname = "nextmodel.pt"
     nextmodelpath = os.path.join(os.getcwd(), nextmodelname)
 
+    self.finder = AStarFinder()
+
 
     if self.train and not os.path.isfile(os.path.join(os.getcwd(), evalmodelname)):
         self.logger.info("Setting up model from scratch.")
@@ -123,11 +127,32 @@ def act(self, game_state: dict) -> str:
     print("prediction of q values: ", self.model.forward(inputvec))
     """
 
-    predicted_q_values = self.evalmodel.forward(state_to_features(game_state))
-    action_chosen = ACTIONS[T.argmax(predicted_q_values)]
+    #predicted_q_values = self.evalmodel.forward(state_to_features(game_state))
+    #action_chosen = ACTIONS[T.argmax(predicted_q_values)]
     #print("Action: ", action_chosen)
 
-    return action_chosen
+    return directionNextCoin(self, game_state)
+
+
+def directionNextCoin(self, game_state: dict):
+    s0, s1 = game_state["self"][3]
+    map = game_state["field"] + game_state["explosion_map"]
+    closest_coin = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)[0]
+    map = abs(map)*(-1) + 1
+    grid = Grid(matrix=map)
+    start = grid.node(s0, s1)
+    end = grid.node(closest_coin[0], closest_coin[1])
+    path, runs = self.finder.find_path(start, end, grid)
+    next_tile = path[1]  #first element is starting point therefore the second element is the successor
+    if next_tile[0] - s0 == 1:
+        return "RIGHT"
+    if next_tile[0] - s0 == -1:
+        return "LEFT"
+    if next_tile[1] - s1 == 1:
+        return "DOWN"
+    if next_tile[1] - s0 == -1:
+        return "UP"
+
 
 def validAction(game_state: dict):
     validAction = [1, 1, 1, 1, 1, 1]
