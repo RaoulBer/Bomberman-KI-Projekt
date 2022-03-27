@@ -16,7 +16,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
-TRANSITION_HISTORY_SIZE = 90
+TRANSITION_HISTORY_SIZE = 900
 # Events
 GOLDSEARCH = "GOLDSEARCH"
 ENEMYINLINE = "ENEMYINLINE"
@@ -28,22 +28,21 @@ WRONGLINE = "WRONGLINE"
 
 def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
-        e.COIN_COLLECTED: 70,
-        e.KILLED_OPPONENT: 150,
-        e.GOT_KILLED: -150,
-        e.KILLED_SELF: -200,
-        e.WAITED: -5,
-        e.COIN_FOUND: 8,
-        e.CRATE_DESTROYED: 5,
-        e.INVALID_ACTION: -15,
-        e.BOMB_DROPPED: -3,
-        e.SURVIVED_ROUND: 1,
-        e.BOMBTHREAD: -20,
-        e.GOLDSEARCH: 4,
-        e.ENEMYINLINE: 6,
-        e.IN_CIRCLES: -20,
-        # e.GOLDRUSH: 6,
-        e.WRONGWAY: -10,
+        e.COIN_COLLECTED: 70, # old_state --> rewarded automatically
+        e.KILLED_OPPONENT: 150,  # old_state --> rewarded automatically
+        e.GOT_KILLED: -150, # old_state --> rewarded automatically
+        e.KILLED_SELF: -100,
+        e.WAITED: -5, # old_state --> rewarded automatically
+        e.COIN_FOUND: 8, # old_state --> rewarded automatically
+        e.CRATE_DESTROYED: 15, # old_state --> rewarded automatically
+        e.INVALID_ACTION: -15, # old_state --> rewarded automatically
+        e.BOMB_DROPPED: -3, # ? new state --> rewarded automatically !!!
+        e.SURVIVED_ROUND: 1, # old_state, small reward anyways
+        e.BOMBTHREAD: -20, # old state - been in danger?
+        e.GOLDSEARCH: 4, # acient state + old state
+        e.ENEMYINLINE: 6, # old state
+        e.IN_CIRCLES: -20, # automated
+        e.WRONGWAY: -10, # acient state + old state --> NOT Goldsearch
         # e.WRONGLINE: -3,
         e.MOVED_LEFT: -3,
         e.MOVED_RIGHT: -3,
@@ -88,38 +87,29 @@ def setup_training(self):
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # Idea: Add your own events to hand out rewards
-
-    self.newstate = old_game_state
-
-
-
     # state_to_features is defined in callbacks.py
 
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         old = state_to_features(old_game_state)
         new = state_to_features(new_game_state)
-        if way_to_go(self.oldstate, self.newstate):
+        if way_to_go(old_game_state, new_game_state):
             events.append(GOLDSEARCH)
         else:
             events.append(WRONGWAY)
-        if face_opponent(self.transitions, old):
+        if face_opponent(new, old):
             events.append(ENEMYINLINE)
-        if in_bombs_way(self.newstate):
+        if in_bombs_way(new_game_state):
             events.append(BOMBTHREAD)
-        if way_to_go2(self.newstate):
-            events.append(GOLDRUSH)
-        if not way_to_go2(self.newstate):
-            events.append(WRONGLINE)
         self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     self.re_overview.append(reward_from_events(self, events))
 
     self.oldstate = old_game_state
-    if (new_game_state["step"] + 1) % TRANSITION_HISTORY_SIZE == 0:
-        y_t = construct_Y(self)
-        transition_list_to_data(self, Ys=y_t)
-        update_model(self)
-        self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    #if (new_game_state["step"] + 1) % TRANSITION_HISTORY_SIZE == 0:
+    #    y_t = construct_Y(self)
+    #    transition_list_to_data(self, Ys=y_t)
+    #    update_model(self)
+    #    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -132,24 +122,11 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     This is also a good place to store an agent that you updated.
     :param self: The same object that is passed to all of your callbacks.
     """
-
-    self.newstate = last_game_state
+    print(last_game_state["step"])
     if last_game_state is not None:
         if last_action is None:
             last_action = "WAIT"
         old = state_to_features(last_game_state)
-        if way_to_go(self.oldstate, self.newstate):
-            events.append(GOLDSEARCH)
-        else:
-            events.append(WRONGWAY)
-        if face_opponent(self.transitions, old):
-            events.append(ENEMYINLINE)
-        if in_bombs_way(self.newstate):
-            events.append(BOMBTHREAD)
-        if way_to_go2(self.newstate):
-            events.append(GOLDRUSH)
-        if not way_to_go2(self.newstate):
-            events.append(WRONGLINE)
         self.transitions.append(Transition(old, last_action, None, reward_from_events(self, events=events)))
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
@@ -225,14 +202,15 @@ def transition_list_to_data(self, Ys):
         return 0
     array = np.empty((length, self.transitions[1][0].size + 2))
     array[:, -1] = Ys
-    rewards = np.empty(length)
+    rewards = np.zeros(length)
     for i, transition in enumerate(self.transitions):
         if transition[1] is None or transition[0] is None:
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
         # array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
-        rewards[i] = transition[-1]
+        rewards[i] = self.transitions[i-1][-1]
+    rewards[-1] += self.transitions[-1][-1]
     if np.isnan(array).any():
         array = np.nan_to_num(array, copy=True)
     try:
@@ -276,7 +254,7 @@ class MyModel:
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=10)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=20, min_samples_leaf=10)
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
         try:
@@ -319,14 +297,14 @@ def way_to_go2(game_state):
         return False
 
 
-def face_opponent(transitions, old):
-    if len(transitions) < 2:
+def face_opponent(old, new):
+    if old is None or new is None:
         return False
-    opp_next = old[0, 9:11]
-    opp_last = transitions[-1][0][0, 9:11]
+    opp_next = new[0, 9:11]
+    opp_last = old[0, 9:11]
     opp_last = opp_last.reshape(1, 2)
     opp_next = opp_next.reshape(1, 2)
-    if (opp_last==np.array([0.0, 0.0]).reshape(1,2)).all() or (opp_next==np.array([0.0, 0.0]).reshape(1,2)).all():
+    if (opp_last == np.array([0.0, 0.0]).reshape(1,2)).all() or (opp_next==np.array([0.0, 0.0]).reshape(1,2)).all():
         return True
     if np.sum(np.linalg.norm(opp_last, axis=1)[0]) > np.sum(np.linalg.norm(opp_next, axis=1)[0]):
         return True
