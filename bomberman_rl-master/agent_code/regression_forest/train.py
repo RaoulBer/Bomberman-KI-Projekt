@@ -57,10 +57,10 @@ def reward_from_events(self, events: List[str]) -> int:
             reward_sum += game_rewards[event]
             # if event == e.WRONGWAY:
             # coin = True
-    # if len(self.transitions) > 3:
-    #    if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
-    #        reward_sum -= 2
-    #        self.logger.info(f"Punished repeated action")
+    if len(self.transitions) > 3:
+       if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
+           reward_sum -= 5
+           self.logger.info(f"Punished repeated action")
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     if reward_sum is None:
         return 0
@@ -79,7 +79,7 @@ def setup_training(self):
     self.past = False
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
-    self.LEARN_RATE = 0.6
+    self.LEARN_RATE = 0.7
     self.re_overview = []
 
 
@@ -90,7 +90,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.oldstate = old_game_state
     self.newstate = new_game_state
 
-    self.re_overview.append(reward_from_events(self, events))
+
 
     # state_to_features is defined in callbacks.py
 
@@ -111,15 +111,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(WRONGLINE)
         self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
-    if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
-        y_t = construct_Y(self)  # todo: correct this
-        transition_list_to_data(self, Ys=y_t)  # todo correct this
-        update_model(self)  # todo: correct this
+    self.re_overview.append(reward_from_events(self, events))
+
+    if (new_game_state["step"] + 1) % TRANSITION_HISTORY_SIZE == 0:
+        y_t = construct_Y(self)
+        transition_list_to_data(self, Ys=y_t)
+        update_model(self)
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
-
     """
     Called at the end of each game or when the agent died to hand out final rewards.
     This replaces game_events_occurred in this round.
@@ -150,6 +151,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         self.transitions.append(Transition(old, last_action, None, reward_from_events(self, events=events)))
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
+    self.re_overview.append(reward_from_events(self, events))
     # Store the model
     y_t = construct_Y(self)
     transition_list_to_data(self, Ys=y_t)
