@@ -105,7 +105,7 @@ def state_to_features(game_state: dict) -> np.array:
     danger[(danger == 0).nonzero()] = features[(danger == 0).nonzero()]
     #crate = parse_crate(game_state, s0, s1)
     #np.array([s0, s1]).reshape(1, 2),
-    out = np.concatenate((danger, players, coins), axis=1)
+    out = np.concatenate((danger, players, np.array([directionNextCoin(game_state)])), axis=1)
     assert out.shape[0] == 1
     return out
 
@@ -167,16 +167,20 @@ def directionNextCoin(game_state: dict):
     s0, s1 = game_state["self"][3]
     map = game_state["field"] + game_state["explosion_map"]
     closest_coin = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)[0]
+    if not closest_coin:
+        closest_coin = parse_crate(game_state, s0, s1)
+    if closest_coin is None:
+        return -1
     path = visitNeighbors(map, closest_coin[0], closest_coin[1], [(s0, s1)])
     next_tile = path[1]  #first element is starting point therefore the second element is the successor
     if next_tile[0] - s0 == 1:
-        return "RIGHT"
+        return 0#"RIGHT"
     if next_tile[0] - s0 == -1:
-        return "LEFT"
-    if next_tile[1] - s1 ==  1:
-        return "DOWN"
+        return 1#"LEFT"
+    if next_tile[1] - s1 == 1:
+        return 2#"DOWN"
     if next_tile[1] - s0 == -1:
-        return "UP"
+        return 4#"UP"
 
 
 def parse_coins(game_state, s0, s1) -> np.array:
@@ -251,14 +255,16 @@ def parse_danger(game_state, s0, s1):
 
 def parse_crate(game_state, s0, s1):
     crates = (game_state["field"] == 1).nonzero()
-    c0 = crates[0] - s0
-    c1 = crates[1] - s1
-    crates = np.linalg.norm(np.stack((c0, c1), axis=0), axis=0)
-    assert crates.size == c1.size
+    c0 = crates[0]
+    c1 = crates[1]
+    c0a = c0-s0
+    c1a = c1-s1
+    crates = np.linalg.norm(np.stack((c0a, c1a), axis=0), axis=0)
+    assert crates.size == c1a.size
     #if not crates:
     #    return np.array([0,0]).reshape(1, 2)
     index = np.argmin(crates)
-    return np.array([np.clip(c0[index],-2, 2), np.clip(c1[index], -2, 2)]).reshape(1, 2)
+    return np.array([c0[index], c1[index]]).reshape(1, 2)
 
 # All unused from here on:
 
