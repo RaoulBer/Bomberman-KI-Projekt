@@ -23,7 +23,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 0.9
+    self.random_prob = 0.90
 
     if self.train:
         np.random.seed()
@@ -60,7 +60,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/700)*0.8 + 0.15
+        self.random_prob = np.exp(-(game_state["round"] + 1)/700)*0.8 + 0.05
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -117,6 +117,7 @@ def parse_field_orientation(game_state: dict, s0, s1) -> np.array:
     mask1[(s0 - 1):(s0 + 2), (s1 - 1):(s1 + 2)] = True
     field = field[mask1.nonzero()]
     features[0, 0:field.size] = field.flatten()
+    features[(features == -1).nonzero()] = 3
     assert features.shape == (1, 9)
     return features
 
@@ -148,7 +149,7 @@ def parse_players(game_state: dict, s0, s1) -> np.array:
 def parse_coins(game_state, s0, s1) -> np.array:
     coins = np.zeros((1, 2))
     c = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)
-    if c is not None:
+    if c:
         for i, coin in enumerate(c):
             if coin is None or i == 1:
                 break
@@ -223,7 +224,7 @@ def parse_crate(game_state, s0, s1):
     #if not crates:
     #    return np.array([0,0]).reshape(1, 2)
     index = np.argmin(crates)
-    return np.array([np.clip(c0[index]-2, 2), np.clip(c1[index], -2, 2)]).reshape(1, 2)
+    return np.array([np.clip(c0[index],-2, 2), np.clip(c1[index], -2, 2)]).reshape(1, 2)
 
 
 def possible_steps(game_state: dict):

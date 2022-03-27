@@ -15,7 +15,6 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
-
 TRANSITION_HISTORY_SIZE = 90
 # Events
 GOLDSEARCH = "GOLDSEARCH"
@@ -31,34 +30,34 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 70,
         e.KILLED_OPPONENT: 150,
         e.GOT_KILLED: -150,
-        e.KILLED_SELF: -90,
+        e.KILLED_SELF: -200,
         e.WAITED: -5,
         e.COIN_FOUND: 8,
-        e.CRATE_DESTROYED: 10,
+        e.CRATE_DESTROYED: 5,
         e.INVALID_ACTION: -15,
         e.BOMB_DROPPED: -1.5,
         e.SURVIVED_ROUND: 1,
         e.BOMBTHREAD: -20,
         e.GOLDSEARCH: 4,
-        e.ENEMYINLINE: 1,
-        #e.GOLDRUSH: 6,
+        e.ENEMYINLINE: 6,
+        # e.GOLDRUSH: 6,
         e.WRONGWAY: -10,
-        #e.WRONGLINE: -3,
+        # e.WRONGLINE: -3,
         e.MOVED_LEFT: -1.5,
         e.MOVED_RIGHT: -1.5,
         e.MOVED_UP: -1.5,
         e.MOVED_DOWN: -1.5
     }
-    #coin = False
+    # coin = False
     reward_sum = 0
     for event in events:
         if event in game_rewards:
             if e.COIN_COLLECTED in events and (event == e.WRONGWAY or event == e.WRONGLINE):
                 continue
             reward_sum += game_rewards[event]
-            #if event == e.WRONGWAY:
-                #coin = True
-    #if len(self.transitions) > 3:
+            # if event == e.WRONGWAY:
+            # coin = True
+    # if len(self.transitions) > 3:
     #    if self.transitions[-3][1] == self.transitions[-1][1] and self.transitions[-2][1] != self.transitions[-1][1]:
     #        reward_sum -= 2
     #        self.logger.info(f"Punished repeated action")
@@ -80,14 +79,13 @@ def setup_training(self):
     self.past = False
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
-    self.LEARN_RATE = 0.7
+    self.LEARN_RATE = 0.6
     self.re_overview = []
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # Idea: Add your own events to hand out rewards
-
 
     self.oldstate = old_game_state
     self.newstate = new_game_state
@@ -99,12 +97,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         old = state_to_features(old_game_state)
         new = state_to_features(new_game_state)
-        self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
-        if way_to_go(self.transitions):
+        if way_to_go(self.transitions, old):
             events.append(GOLDSEARCH)
         else:
             events.append(WRONGWAY)
-        if face_opponent(old):
+        if face_opponent(self.transitions, old):
             events.append(ENEMYINLINE)
         if in_bombs_way(self.oldstate):
             events.append(BOMBTHREAD)
@@ -112,15 +109,17 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(GOLDRUSH)
         if not way_to_go2(old):
             events.append(WRONGLINE)
+        self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     if new_game_state["step"] + 1 % TRANSITION_HISTORY_SIZE == 0:
-        y_t = construct_Y(self) # todo: correct this
-        transition_list_to_data(self, Ys=y_t) # todo correct this
-        update_model(self) #todo: correct this
+        y_t = construct_Y(self)  # todo: correct this
+        transition_list_to_data(self, Ys=y_t)  # todo correct this
+        update_model(self)  # todo: correct this
         self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
+
     """
     Called at the end of each game or when the agent died to hand out final rewards.
     This replaces game_events_occurred in this round.
@@ -132,11 +131,24 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.oldstate = last_game_state
     self.newstate = None
-
+    if last_game_state is not None:
+        if last_action is None:
+            last_action = "WAIT"
+        old = state_to_features(last_game_state)
+        if way_to_go(self.transitions, old):
+            events.append(GOLDSEARCH)
+        else:
+            events.append(WRONGWAY)
+        if face_opponent(self.transitions, old):
+            events.append(ENEMYINLINE)
+        if in_bombs_way(self.oldstate):
+            events.append(BOMBTHREAD)
+        if way_to_go2(old):
+            events.append(GOLDRUSH)
+        if not way_to_go2(old):
+            events.append(WRONGLINE)
+        self.transitions.append(Transition(old, last_action, None, reward_from_events(self, events=events)))
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    if last_game_state is not None and last_action is not None:
-        self.transitions.append(
-            Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
 
     # Store the model
     y_t = construct_Y(self)
@@ -145,9 +157,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     uni = np.concatenate((self.data, self.rewards.reshape(self.rewards.size, 1)), axis=1)
     uni = np.unique(uni, axis=0)
-    self.data = uni[:,:-1]
-    self.rewards = uni[:,-1]
-    print(uni.shape, self.data.shape)
+    self.data = uni[:, :-1]
+    self.rewards = uni[:, -1]
+    print(f"self.data.shape: {self.data.shape}")
     assert self.rewards.size == self.data.shape[0]
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
@@ -155,13 +167,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
-    #self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 80
-    print(f"Gamma: {self.LEARN_RATE}")
+    # self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 80
+    # print(f"Gamma: {self.LEARN_RATE}")
     print(f"Epsilon:{self.random_prob}")
 
     with open("rewards.pt", "rb") as file:
         re = pickle.load(file)
-    re.append(np.mean(self.re_overview)) # if needed: change to measure_performance instead of reward_from_events
+    re.append(np.mean(self.re_overview))  # if needed: change to measure_performance instead of reward_from_events
     with open("rewards.pt", "wb") as file:
         pickle.dump(re, file)
     self.re_overview = []
@@ -180,12 +192,12 @@ def update_model(self):
     y_old = self.data[:, -1].copy()
     self.model = MyModel()
     self.model.train(self.data.copy())
-    update_y(self) # must change
+    update_y(self)  # must change
     y_new = self.data[:, -1].copy()
-    diff = np.linalg.norm(y_old-y_new)
+    diff = np.linalg.norm(y_old - y_new)
     print(f"Difference in Y- Calculation: {diff}")
-    if self.oldstate["round"] % 1000 == 0:
-        print(f"Importance of features: {self.model.forest.feature_importances_}")
+    # if self.oldstate["round"] % 1000 == 0:
+    # print(f"Importance of features: {self.model.forest.feature_importances_}")
     if diff <= 1:
         print("no changes")
         raise Exception
@@ -216,7 +228,7 @@ def transition_list_to_data(self, Ys):
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
-        #array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
+        # array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
         rewards[i] = transition[-1]
     if np.isnan(array).any():
         array = np.nan_to_num(array, copy=True)
@@ -242,7 +254,7 @@ def construct_Y(self):
             ret = []
             for i in possible_steps(self.newstate):
                 data[0, -1] = i
-                #ret.append(self.model.predict(make_dependencies(data, i)))
+                # ret.append(self.model.predict(make_dependencies(data, i)))
                 ret.append(self.model.predict(data))
             val = np.max(ret)
         else:
@@ -253,18 +265,21 @@ def construct_Y(self):
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(random_state=0)
-        self.batchsize = 20000
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
+        self.batchsize = 130000
         self.trained = False
 
     def predict(self, instance):
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(bootstrap=True, random_state=0, n_estimators=30)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
-        self.forest.fit(data[:, :-1], data[:, -1])
+        try:
+            self.forest.fit(X=data[:, :-1], y=data[:, -1])
+        except:
+            print(data[np.argmax(data, axis=0),:])
 
 
 def in_bombs_way(next):
@@ -275,11 +290,11 @@ def in_bombs_way(next):
         return False
 
 
-def way_to_go(transitions):
+def way_to_go(transitions, old):
     if len(transitions) < 2:
         return False
-    coins_next = transitions[-1][0][0, -2:]
-    coins_last = transitions[-2][0][0, -2:]
+    coins_next = old[0, -2:]
+    coins_last = transitions[-1][0][0, -2:]
     coins_last = coins_last.reshape(1, 2)
     coins_next = coins_next.reshape(1, 2)
     if np.sum(np.linalg.norm(coins_last, axis=1)[0]) > np.sum(np.linalg.norm(coins_next, axis=1)[0]):
@@ -289,14 +304,21 @@ def way_to_go(transitions):
 
 
 def way_to_go2(old_state):
-    if (old_state[0, -2] == 0 and np.abs(old_state[0, -2]) < 5) or (old_state[0, -1] == 0 and np.abs(old_state[0, -2]) < 5):
+    if (old_state[0, -2] == 0 and np.abs(old_state[0, -2]) < 5) or (
+            old_state[0, -1] == 0 and np.abs(old_state[0, -2]) < 5):
         return True
     else:
         return False
 
 
-def face_opponent(next_state):
-    if (next_state[0, 11] == 0 or next_state[0, 12] == 0) and (next_state[0, 11] < 3 or next_state[0, 12] < 3):
+def face_opponent(transitions, old):
+    if len(transitions) < 2:
+        return False
+    opp_next = old[0, 9:11]
+    opp_last = transitions[-1][0][0, 9:11]
+    opp_last = opp_last.reshape(1, 2)
+    opp_next = opp_next.reshape(1, 2)
+    if np.sum(np.linalg.norm(opp_last, axis=1)[0]) > np.sum(np.linalg.norm(opp_next, axis=1)[0]):
         return True
     else:
         return False
