@@ -8,6 +8,7 @@ from .callbacks import state_to_features
 from .callbacks import possible_steps
 from sklearn.ensemble import RandomForestRegressor
 from .callbacks import parse_danger
+from .callbacks import parse_coins
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
@@ -35,18 +36,19 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_FOUND: 8,
         e.CRATE_DESTROYED: 5,
         e.INVALID_ACTION: -15,
-        e.BOMB_DROPPED: -1.5,
+        e.BOMB_DROPPED: -3,
         e.SURVIVED_ROUND: 1,
         e.BOMBTHREAD: -20,
         e.GOLDSEARCH: 4,
         e.ENEMYINLINE: 6,
+        e.IN_CIRCLES: -20,
         # e.GOLDRUSH: 6,
         e.WRONGWAY: -10,
         # e.WRONGLINE: -3,
-        e.MOVED_LEFT: -1.5,
-        e.MOVED_RIGHT: -1.5,
-        e.MOVED_UP: -1.5,
-        e.MOVED_DOWN: -1.5
+        e.MOVED_LEFT: -3,
+        e.MOVED_RIGHT: -3,
+        e.MOVED_UP: -3,
+        e.MOVED_DOWN: -3
     }
     # coin = False
     reward_sum = 0
@@ -87,8 +89,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # Idea: Add your own events to hand out rewards
 
-    self.oldstate = old_game_state
-    self.newstate = new_game_state
+    self.newstate = old_game_state
 
 
 
@@ -97,22 +98,23 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         old = state_to_features(old_game_state)
         new = state_to_features(new_game_state)
-        if way_to_go(self.transitions, old):
+        if way_to_go(self.oldstate, self.newstate):
             events.append(GOLDSEARCH)
         else:
             events.append(WRONGWAY)
         if face_opponent(self.transitions, old):
             events.append(ENEMYINLINE)
-        if in_bombs_way(self.oldstate):
+        if in_bombs_way(self.newstate):
             events.append(BOMBTHREAD)
-        if way_to_go2(old):
+        if way_to_go2(self.newstate):
             events.append(GOLDRUSH)
-        if not way_to_go2(old):
+        if not way_to_go2(self.newstate):
             events.append(WRONGLINE)
         self.transitions.append(Transition(old, self_action, new, reward_from_events(self, events=events)))
 
     self.re_overview.append(reward_from_events(self, events))
 
+    self.oldstate = old_game_state
     if (new_game_state["step"] + 1) % TRANSITION_HISTORY_SIZE == 0:
         y_t = construct_Y(self)
         transition_list_to_data(self, Ys=y_t)
@@ -130,23 +132,23 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     This is also a good place to store an agent that you updated.
     :param self: The same object that is passed to all of your callbacks.
     """
-    self.oldstate = last_game_state
-    self.newstate = None
+
+    self.newstate = last_game_state
     if last_game_state is not None:
         if last_action is None:
             last_action = "WAIT"
         old = state_to_features(last_game_state)
-        if way_to_go(self.transitions, old):
+        if way_to_go(self.oldstate, self.newstate):
             events.append(GOLDSEARCH)
         else:
             events.append(WRONGWAY)
         if face_opponent(self.transitions, old):
             events.append(ENEMYINLINE)
-        if in_bombs_way(self.oldstate):
+        if in_bombs_way(self.newstate):
             events.append(BOMBTHREAD)
-        if way_to_go2(old):
+        if way_to_go2(self.newstate):
             events.append(GOLDRUSH)
-        if not way_to_go2(old):
+        if not way_to_go2(self.newstate):
             events.append(WRONGLINE)
         self.transitions.append(Transition(old, last_action, None, reward_from_events(self, events=events)))
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
@@ -266,7 +268,7 @@ def construct_Y(self):
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=10)
         self.batchsize = 130000
         self.trained = False
 
@@ -274,7 +276,7 @@ class MyModel:
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=10)
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
         try:
@@ -291,22 +293,27 @@ def in_bombs_way(next):
         return False
 
 
-def way_to_go(transitions, old):
-    if len(transitions) < 2:
+def way_to_go(game_state_o, game_state_n):
+    if game_state_o is None:
         return False
-    coins_next = old[0, -2:]
-    coins_last = transitions[-1][0][0, -2:]
-    coins_last = coins_last.reshape(1, 2)
-    coins_next = coins_next.reshape(1, 2)
-    if np.sum(np.linalg.norm(coins_last, axis=1)[0]) > np.sum(np.linalg.norm(coins_next, axis=1)[0]):
+    s0o, s1o = game_state_o["self"][3]
+    coin_o = parse_coins(game_state_o, s0o, s1o)
+    s0n, s1n = game_state_n["self"][3]
+    coin_n = parse_coins(game_state_n, s0n, s1n)
+    assert len(np.linalg.norm(coin_o, axis=1)) == 1
+    if np.sum(np.linalg.norm(coin_o, axis=1)[0]) > np.sum(np.linalg.norm(coin_n, axis=1)[0]):
         return True
     else:
         return False
 
 
-def way_to_go2(old_state):
-    if (old_state[0, -2] == 0 and np.abs(old_state[0, -2]) < 5) or (
-            old_state[0, -1] == 0 and np.abs(old_state[0, -2]) < 5):
+def way_to_go2(game_state):
+    if game_state is None:
+        return False
+    s0, s1 = game_state["self"][3]
+    coin = parse_coins(game_state, s0, s1)
+    if (coin[0,-2] == 0 and np.abs(coin[0,-1]) < 5) or (
+            coin[0,-1] == 0 and np.abs(coin[0, -2]) < 5):
         return True
     else:
         return False
@@ -319,6 +326,8 @@ def face_opponent(transitions, old):
     opp_last = transitions[-1][0][0, 9:11]
     opp_last = opp_last.reshape(1, 2)
     opp_next = opp_next.reshape(1, 2)
+    if (opp_last==np.array([0.0, 0.0]).reshape(1,2)).all() or (opp_next==np.array([0.0, 0.0]).reshape(1,2)).all():
+        return True
     if np.sum(np.linalg.norm(opp_last, axis=1)[0]) > np.sum(np.linalg.norm(opp_next, axis=1)[0]):
         return True
     else:

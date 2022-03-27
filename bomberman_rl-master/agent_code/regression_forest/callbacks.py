@@ -23,7 +23,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 0.90
+    self.random_prob = 0.10
 
     if self.train:
         np.random.seed()
@@ -60,7 +60,7 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = 0.1  # np.exp(-(game_state["round"] + 1)/100)*0.8 +
+        self.random_prob = np.exp(-(game_state["round"] + 1)/1000)*0.0 + 0.1  #
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
@@ -71,7 +71,6 @@ def act(self, game_state: dict) -> str:
 
     self.logger.debug("Querying model for action.")
     game_state_use = state_to_features(game_state)
-
     highest_known = -1000
     response = 4  # Standard: Wait
     for i in possible:
@@ -105,7 +104,7 @@ def state_to_features(game_state: dict) -> np.array:
     danger[(danger == 0).nonzero()] = features[(danger == 0).nonzero()]
     #crate = parse_crate(game_state, s0, s1)
     #np.array([s0, s1]).reshape(1, 2),
-    out = np.concatenate((danger, players, np.array([directionNextCoin(game_state)])), axis=1)
+    out = np.concatenate((danger, players, np.array([directionNextCoin(game_state)]).reshape(1, 1)), axis=1)
     assert out.shape[0] == 1
     return out
 
@@ -146,41 +145,68 @@ def parse_players(game_state: dict, s0, s1) -> np.array:
 
 
 def visitNeighbors(map, goalx, goaly, previous):
-    currentx, currenty = previous[-1]
-    if currentx == goalx and currenty == goaly:
-        return previous
-    #Check up
-    if map[currentx][currenty-1] == 0:
-        visitNeighbors(map, goalx, goaly, previous.append((currentx, currenty-1)))
-    # Check right
-    if map[currentx + 1][currenty] == 0:
-        visitNeighbors(map, goalx, goaly, previous.append((currentx+1, currenty)))
-    # Check down
-    if map[currentx][currenty + 1] == 0:
-        visitNeighbors(map, goalx, goaly, previous.append((currentx, currenty+1)))
-    # Check left
-    if map[currentx - 1][currenty] == 0:
-        visitNeighbors(map, goalx, goaly, previous.append((currentx-1, currenty)))
+    previous_copy = previous.copy()
+    currentx, currenty = previous_copy[-1]
+    if (goalx, goaly) in previous_copy:
+        return previous_copy
+    elif (map[currentx, currenty - 1] == 0) and ((currentx, currenty - 1) not in previous_copy):
+        previous_copy.append((currentx, currenty - 1))
+        return visitNeighbors(map, goalx, goaly, previous_copy)
+    elif (map[currentx + 1, currenty] == 0) and ((currentx + 1, currenty) not in previous_copy):
+        previous_copy.append((currentx + 1, currenty))
+        return visitNeighbors(map, goalx, goaly, previous_copy)
+    elif (map[currentx, currenty + 1] == 0) and ((currentx, currenty + 1) not in previous_copy):
+        previous_copy.append((currentx, currenty + 1))
+        return visitNeighbors(map, goalx, goaly, previous_copy)
+    if (map[currentx - 1, currenty] == 0) and ((currentx - 1, currenty) not in previous_copy):
+        previous_copy.append((currentx - 1, currenty))
+        return visitNeighbors(map, goalx, goaly, previous_copy)
+    return None
+
+def bfs(grid, start):
+    goal = 99
+    wall = 1
+    queue = deque([[start]])
+    seen = {start}
+    while queue:
+        path = queue.popleft()
+        x, y = path[-1]
+        if grid[y][x] == goal:
+            return path
+        for x2, y2 in ((x+1,y), (x-1,y), (x,y+1), (x,y-1)):
+            if 0 <= x2 < 17 and 0 <= y2 < 17 and grid[y2][x2] != wall and (x2, y2) not in seen:
+                queue.append(path + [(x2, y2)])
+                seen.add((x2, y2))
 
 
 def directionNextCoin(game_state: dict):
     s0, s1 = game_state["self"][3]
     map = game_state["field"] + game_state["explosion_map"]
-    closest_coin = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)[0]
-    if not closest_coin:
+    coins = sorted(game_state["coins"], key=lambda x: (s0 - x[0]) ** 2 + (s1 - x[1]) ** 2)
+    if not coins:
         closest_coin = parse_crate(game_state, s0, s1)
+    else:
+        closest_coin = coins[0]
     if closest_coin is None:
         return -1
-    path = visitNeighbors(map, closest_coin[0], closest_coin[1], [(s0, s1)])
-    next_tile = path[1]  #first element is starting point therefore the second element is the successor
+    map[(map!=0).nonzero()]= 1
+    map[closest_coin] = 99
+    path = bfs(map, (s0, s1)) # visitNeighbors(map, closest_coin[0], closest_coin[1], [(s0, s1)])
+    if path is None or len(path)<2:
+        out = -1
+        return(out)
+    else:
+        assert len(path) >=2
+        next_tile = path[1]  #first element is starting point therefore the second element is the successor
     if next_tile[0] - s0 == 1:
-        return 0#"RIGHT"
+        out = 0#"RIGHT"
     if next_tile[0] - s0 == -1:
-        return 1#"LEFT"
+        out = 1#"LEFT"
     if next_tile[1] - s1 == 1:
-        return 2#"DOWN"
-    if next_tile[1] - s0 == -1:
-        return 4#"UP"
+        out = 2#"DOWN"
+    if next_tile[1] - s1 == -1:
+        out = 4#"UP"
+    return out
 
 
 def parse_coins(game_state, s0, s1) -> np.array:
@@ -192,7 +218,7 @@ def parse_coins(game_state, s0, s1) -> np.array:
                 break
             coins[i, :] = np.array([np.clip(s0 - coin[0], -2, 2), np.clip(s1 - coin[1], -2,2)])
     elif (game_state["field"] == 1).any():
-        return parse_crate(game_state, s0, s1)
+        return np.array([parse_crate(game_state, s0, s1)[:2]]).reshape(1,2)
     return coins.reshape(1, 2)
 
 def parse_danger(game_state, s0, s1):
@@ -206,7 +232,7 @@ def parse_danger(game_state, s0, s1):
         bombx, bomby = bomb[0]
         # 0,0
         if (s0 -1  - bombx == 0 and s1 - 1 - bomby <= 3) or (s1 - 1 - bomby == 0 and s0 - 1 - bombx <= 3):
-            out[0,0] = code_bomb
+            out[0, 0] = code_bomb
         #0,1
         if (s0 -1- bombx == 0 and s1 - bomby <= 3) or (s1 - bomby == 0 and s0-1 - bombx <= 3):
             out[0, 1] = code_bomb
@@ -263,8 +289,11 @@ def parse_crate(game_state, s0, s1):
     assert crates.size == c1a.size
     #if not crates:
     #    return np.array([0,0]).reshape(1, 2)
+    if not crates.any():
+        return (7,7)
     index = np.argmin(crates)
-    return np.array([c0[index], c1[index]]).reshape(1, 2)
+    out = (c0[index], c1[index])
+    return out
 
 # All unused from here on:
 
