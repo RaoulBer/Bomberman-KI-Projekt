@@ -60,12 +60,12 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/700)*0.8 + 0.05
+        self.random_prob = 0.1  # np.exp(-(game_state["round"] + 1)/100)*0.8 +
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
     if (self.train and random.random() < self.random_prob) or not self.model:
-        return rm.act(self, game_state)
+        #return rm.act(self, game_state)
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
@@ -128,8 +128,7 @@ def parse_bombspots(game_state: dict, s0, s1) -> np.array:
     if b is not None:
         for i, bomb in enumerate(b):
             bombx, bomby = bomb[0]
-            bombs[i, :] = np.array([s0 - bombx, s1 - bomby, bomb[1]])
-            #bombs[i, :] = np.array([s0 - bomb[0][0], s1 - bomb[0][1], 99, 99, bomb[1]])
+            bombs[i, :] = np.array([np.clip(s0 - bombx, -3,3), np.clip(s1 - bomby, -3,3), bomb[1]])
     return bombs.reshape(1, 12)
 
 
@@ -215,6 +214,7 @@ def parse_danger(game_state, s0, s1):
             out[0, 8] = code_dead
     return out
 
+
 def parse_crate(game_state, s0, s1):
     crates = (game_state["field"] == 1).nonzero()
     c0 = crates[0] - s0
@@ -226,6 +226,7 @@ def parse_crate(game_state, s0, s1):
     index = np.argmin(crates)
     return np.array([np.clip(c0[index],-2, 2), np.clip(c1[index], -2, 2)]).reshape(1, 2)
 
+# All unused from here on:
 
 def possible_steps(game_state: dict):
     return np.array([0, 1, 2, 3, 4, 5])
