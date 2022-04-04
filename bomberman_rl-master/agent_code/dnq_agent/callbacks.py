@@ -196,6 +196,7 @@ def excludeInvalidActions(game_state: dict, q_values_tensor):
 
     return excluded_qs
 
+
 def aroundAgent(game_state: dict, input_field, isbombarray = False) -> T.tensor:
     #returns a 5 +/- array of the input_field around the agents position
     playerx, playery = game_state["self"][3]
@@ -212,6 +213,7 @@ def aroundAgent(game_state: dict, input_field, isbombarray = False) -> T.tensor:
                 returnarray[i+5][j+5] = input_field[tempx][tempy]
 
     return returnarray
+
 
 def parseStep(game_state: dict) -> int:
     try:
@@ -309,6 +311,7 @@ def parseBombs(game_state: dict, feature_vector):
         feature_vector[8] = 4 if deadly_map[playerx + 1][playery + 1] != 0 else feature_vector[8]
     except ValueError:
         print("Value Error in bomb parser")
+
 
 def parseBombPossible(game_state: dict, feature_vector):
     if game_state["self"][2]:
