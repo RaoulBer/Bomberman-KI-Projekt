@@ -3,7 +3,7 @@ import pickle
 import random
 from collections import namedtuple, deque
 import numpy as np
-from . import rolemodel as rm
+from . import rolemodel as rm #Auskommentieren für Act morgen!!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 prob = [.2, .2, .2, .2, .1, .1]
 
@@ -34,7 +34,7 @@ def setup(self):
         self.ignore_others_timer = 0
         self.current_round = 0
 
-        self.model = False
+        self.mod = False
         self.rewards = False
         if os.path.isfile("my-saved-data.pt"):
             with open("my-saved-data.pt", "rb") as file:
@@ -60,18 +60,18 @@ def act(self, game_state: dict) -> str:
     # todo Exploration vs exploitation
     if game_state["round"] != self.round:
         self.round = game_state["round"]
-        self.random_prob = np.exp(-(game_state["round"] + 1)/1000)*0.8 + 0.1  #
+        self.random_prob = np.exp(-(game_state["round"] + 1)/1000)*0.8 + 0.05
 
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
-    if (self.train and random.random() < self.random_prob) or not self.model:
-        return rm.act(self, game_state)
+    if (self.train and random.random() < self.random_prob) or not self.mod:
+        #return rm.act(self, game_state)
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 
     self.logger.debug("Querying model for action.")
     game_state_use = state_to_features(game_state)
-    highest_known = -1000
+    highest_known = -1000000
     response = 4  # Standard: Wait
     for i in possible:
         data = np.empty((1, game_state_use.size + 1))
@@ -99,7 +99,7 @@ def state_to_features(game_state: dict) -> np.array:
     features = parse_field_orientation(game_state, s0, s1)
     #bombs = parse_bombspots(game_state, s0, s1)
     players = parse_players(game_state, s0, s1)
-    coins = parse_coins(game_state, s0, s1)
+    #coins = parse_coins(game_state, s0, s1)
     danger = parse_danger(game_state, s0, s1)
     danger[(danger == 0).nonzero()] = features[(danger == 0).nonzero()]
     #crate = parse_crate(game_state, s0, s1)
@@ -231,13 +231,13 @@ def parse_danger(game_state, s0, s1):
     for bomb in b:
         bombx, bomby = bomb[0]
         # 0,0
-        if (s0 -1  - bombx == 0 and s1 - 1 - bomby <= 3) or (s1 - 1 - bomby == 0 and s0 - 1 - bombx <= 3):
+        if (s0 - 1 - bombx == 0 and s1 - 1 - bomby <= 3) or (s1 - 1 - bomby == 0 and s0 - 1 - bombx <= 3):
             out[0, 0] = code_bomb
         #0,1
         if (s0 -1- bombx == 0 and s1 - bomby <= 3) or (s1 - bomby == 0 and s0-1 - bombx <= 3):
             out[0, 1] = code_bomb
         #0,-1
-        if (s0-1 - bombx == 0 and s1 +1 - bomby <= 3) or (s1 +1 - bomby == 0 and s0-1 - bombx <= 3):
+        if (s0-1 - bombx == 0 and s1 +1 - bomby <= 3) or (s1+1 - bomby == 0 and s0-1 - bombx <= 3):
             out[0,2] = code_bomb
         #1,0
         if (s0 - bombx == 0 and s1 - 1 - bomby == 0) or (s0 - bomb[0][0] <= 3 and s1 - 1 - bomb[0][1] <= 3):
@@ -246,16 +246,16 @@ def parse_danger(game_state, s0, s1):
         if (s0 - bombx == 0 and s1 - bomb[0][1] <= 3) or (s1 - bomby == 0 and s0 - bomb[0][0] <= 3):
             out[0,4] =code_bomb
         #1,-1
-        if (s0 - bombx == 0 and s1 + 1 - bomby <= 3) or (s1 - bomby == 0 and s0 + 1 - bombx <= 3):
+        if (s0 - bombx == 0 and s1 + 1 - bomby <= 3) or (s1 + 1 - bomby == 0 and s0 - bombx <= 3):
             out[0, 5] = code_bomb
         #-1,0
-        if (s0 + 1 - bombx == 0 and s1-1 - bomby <= 3) or (s1 -1- bomby == 0 and s0 + 1 - 1 - bombx <= 3):
+        if (s0 + 1 - bombx == 0 and s1 - 1 - bomby <= 3) or (s1 - 1 - bomby == 0 and s0 + 1 - bombx <= 3):
             out[0,6] = code_bomb
         #-1,1
-        if (s0 + 1 - bombx == 0 and s1 - bomby == 0) or (s0 + 1 - bomb[0][0] <= 3 and s1 - bomb[0][1] <= 3):
+        if (s0 + 1 - bombx == 0 and s1 - bomby == 0) or (s0 + 1 - bombx <= 3 and s1 - bomby <= 3):
             out[0, 7] = code_bomb
         #-1,-1
-        if (s0 + 1 - bombx == 0 and s1 + 1 - bomb[0][1] <= 3) or (s1 + 1 - bomby == 0 and s0 + 1 - bomb[0][0] <= 3):
+        if (s0 + 1 - bombx == 0 and s1 + 1 - bomby <= 3) or (s1 + 1 - bomby == 0 and s0 + 1 - bombx <= 3):
             out[0,8] = code_bomb
 
     if game_state["explosion_map"][s0-1, s1-1] != 0:

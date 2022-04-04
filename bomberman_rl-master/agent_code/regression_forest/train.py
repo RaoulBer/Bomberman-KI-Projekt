@@ -1,7 +1,6 @@
 from collections import namedtuple, deque
 import pickle
 from typing import List
-import os
 import numpy as np
 import events as e
 from .callbacks import state_to_features
@@ -71,7 +70,7 @@ def reward_from_events(self, events: List[str]) -> int:
 def setup_training(self):
     """
     Initialise self for training purpose.
-    This is called after `setup` in callbacks.py.
+    This is called after `setup` in callbacks_TRAIN.py.
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     # Example: Set up an array that will note transition tuples
@@ -80,14 +79,18 @@ def setup_training(self):
     self.past = False
     with open("rewards.pt", "wb") as file:
         pickle.dump([], file)
-    self.LEARN_RATE = 0.7
+    with open("Y_Convergence.pt", "wb") as file:
+        pickle.dump([], file)
+    with open("steps.pt", "wb") as file:
+        pickle.dump([], file)
+    self.LEARN_RATE = 0.99
     self.re_overview = []
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # Idea: Add your own events to hand out rewards
-    # state_to_features is defined in callbacks.py
+    # state_to_features is defined in callbacks_TRAIN.py
 
     if old_game_state is not None and new_game_state is not None and self_action is not None:
         old = state_to_features(old_game_state)
@@ -122,7 +125,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     This is also a good place to store an agent that you updated.
     :param self: The same object that is passed to all of your callbacks.
     """
-    print(last_game_state["step"])
+    #print(last_game_state["step"])
     if last_game_state is not None:
         if last_action is None:
             last_action = "WAIT"
@@ -140,7 +143,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     uni = np.unique(uni, axis=0)
     self.data = uni[:, :-1]
     self.rewards = uni[:, -1]
-    print(f"self.data.shape: {self.data.shape}")
+    #print(f"self.data.shape: {self.data.shape}")
     assert self.rewards.size == self.data.shape[0]
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
@@ -157,25 +160,28 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     re.append(np.mean(self.re_overview))  # if needed: change to measure_performance instead of reward_from_events
     with open("rewards.pt", "wb") as file:
         pickle.dump(re, file)
+    with open("steps.pt", "rb") as file:
+        re = pickle.load(file)
+    re.append(last_game_state["step"])  # if needed: change to measure_performance instead of reward_from_events
+    with open("steps.pt", "wb") as file:
+        pickle.dump(re, file)
     self.re_overview = []
 
 
-def unique(a):
-    order = np.lexsort(a.T)
-    a = a[order]
-    diff = np.diff(a, axis=0)
-    ui = np.ones(len(a), 'bool')
-    ui[1:] = (diff != 0).any(axis=1)
-    return ui
-
 def update_model(self):
+    self.mod =True
     y_old = self.data[:, -1].copy()
     self.model = MyModel()
     self.model.train(self.data.copy())
     update_y(self)  # must change
     y_new = self.data[:, -1].copy()
     diff = np.linalg.norm(y_old - y_new)
-    print(f"Difference in Y- Calculation: {diff}")
+    print(f"Difference in Y- Calculation: {diff/self.data.shape[0]}")
+    with open("Y_Convergence.pt", "rb") as file:
+        re = pickle.load(file)
+    re.append(diff/self.data.shape[0])  # if needed: change to measure_performance instead of reward_from_events
+    with open("Y_Convergence.pt", "wb") as file:
+        pickle.dump(re, file)
     # if self.oldstate["round"] % 1000 == 0:
     # print(f"Importance of features: {self.model.forest.feature_importances_}")
     if diff <= 1:
@@ -185,34 +191,34 @@ def update_model(self):
 
 def update_y(self):
     Y = calculate_y(self)
-    self.data[:, -1] = Y
+    self.data[:-1, -1] = Y
 
 
 def calculate_y(self):
-    proposition = self.model.predict(self.data[:, :-1])
-    y = self.rewards + self.LEARN_RATE * proposition
-    assert y.shape == self.data[:, -1].shape
+    proposition = self.model.predict(self.data[1:, :-1])
+    y = self.rewards[:-1] + self.LEARN_RATE*proposition
+    assert y.shape == self.data[:-1, -1].shape
     return y
 
 
 def transition_list_to_data(self, Ys):
     length = len(self.transitions)
-    assert len(Ys) == length
+    assert len(Ys) == length -1
     if length == 1:
         return 0
-    array = np.empty((length, self.transitions[1][0].size + 2))
-    array[:, -1] = Ys
+    array = np.zeros((length, self.transitions[1][0].size + 2))
+    array[:-1, -1] = Ys
+    assert array[0, -1] == Ys[0]
     rewards = np.zeros(length)
     for i, transition in enumerate(self.transitions):
+        if i == len(self.transitions) - 1:
+            break
         if transition[1] is None or transition[0] is None:
             continue
         array[i, :-2] = transition[0]
         array[i, -2] = ACTIONS.index(transition[1])
-        # array[i,:-1] = make_dependencies(array[i, :-1], action=ACTIONS.index(transition[1]))
         rewards[i] = self.transitions[i-1][-1]
     rewards[-1] += self.transitions[-1][-1]
-    if np.isnan(array).any():
-        array = np.nan_to_num(array, copy=True)
     try:
         self.data = np.concatenate((self.data, array))
     except ValueError:
@@ -225,42 +231,48 @@ def transition_list_to_data(self, Ys):
 
 def construct_Y(self):
     Y = []
-    for transition in self.transitions:
-        if transition[2] is None or len(self.transitions) < TRANSITION_HISTORY_SIZE:
-            Y.append(transition[-1])
+    for i, transition in enumerate(self.transitions):
+        if i == 0:
             continue
-        elif self.model:
+        if transition[2] is None:
+            Y.append(self.transitions[i-1][-1])
+            continue
+        elif self.mod:
             data = np.empty((1, transition[2].size + 1))
             data[0, :-1] = transition[2]
             ret = []
-            for i in possible_steps(self.newstate):
+            for i in possible_steps(None):
                 data[0, -1] = i
-                # ret.append(self.model.predict(make_dependencies(data, i)))
+                if np.isnan(data).any():
+                    continue
                 ret.append(self.model.predict(data))
-            val = np.max(ret)
+            if ret:
+                val = np.max(ret)
+            else:
+                val = 0
         else:
-            val = 0
+            val=0
         Y.append(transition[-1] + self.LEARN_RATE * val)
     return Y
 
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=10)
-        self.batchsize = 130000
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=100)
+        self.batchsize = 140000
         self.trained = False
 
     def predict(self, instance):
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=20, min_samples_leaf=10)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=100)
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
         try:
-            self.forest.fit(X=data[:, :-1], y=data[:, -1])
+            self.forest.fit(X=data[:-1, :-1], y=data[:-1, -1])
         except:
-            print(data[np.argmax(data, axis=0),:])
+            print(data[np.argmax(data, axis=0), :])
 
 
 def in_bombs_way(next):
