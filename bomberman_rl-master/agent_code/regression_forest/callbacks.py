@@ -23,7 +23,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.round = 1
-    self.random_prob = 0.1
+    self.random_prob = 1
 
     if self.train:
         np.random.seed()
@@ -65,7 +65,7 @@ def act(self, game_state: dict) -> str:
     #possible = possible_steps(feature=game_state_use, bomb=game_state['self'][2])
     possible = possible_steps(game_state)
     if (self.train and random.random() < self.random_prob) or not self.mod:
-        #return rm.act(self, game_state)
+        return rm.act(self, game_state)
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice([ACTIONS[i] for i in possible], p=return_distro(possible))
 

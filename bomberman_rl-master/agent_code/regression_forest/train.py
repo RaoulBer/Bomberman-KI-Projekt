@@ -143,7 +143,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     uni = np.unique(uni, axis=0)
     self.data = uni[:, :-1]
     self.rewards = uni[:, -1]
-    #print(f"self.data.shape: {self.data.shape}")
+    print(f"self.data.shape: {self.data.shape}")
     assert self.rewards.size == self.data.shape[0]
     with open("my-saved-data.pt", "wb") as file:
         pickle.dump(self.data, file)
@@ -151,8 +151,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         pickle.dump(self.model, file)
     with open("my-saved-rewards.pt", "wb") as file:
         pickle.dump(self.rewards, file)
-    # self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 80
-    # print(f"Gamma: {self.LEARN_RATE}")
+    #self.LEARN_RATE = np.exp((-last_game_state["round"] + 1)/500) * 0.8 + 80
+    print(f"Gamma: {self.LEARN_RATE}")
     print(f"Epsilon:{self.random_prob}")
 
     with open("rewards.pt", "rb") as file:
@@ -196,7 +196,7 @@ def update_y(self):
 
 def calculate_y(self):
     proposition = self.model.predict(self.data[1:, :-1])
-    y = self.rewards[:-1] + self.LEARN_RATE*proposition
+    y = self.data[:-1, -1] + 0.3*(self.rewards[:-1] + 0.6 * proposition - self.data[:-1, -1])
     assert y.shape == self.data[:-1, -1].shape
     return y
 
@@ -258,7 +258,7 @@ def construct_Y(self):
 
 class MyModel:
     def __init__(self):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=100)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
         self.batchsize = 140000
         self.trained = False
 
@@ -266,7 +266,7 @@ class MyModel:
         return self.forest.predict(instance)
 
     def train(self, data):
-        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=100)
+        self.forest = RandomForestRegressor(bootstrap=True, n_estimators=30)
         if data.shape[0] >= self.batchsize:
             data = data[np.random.choice(data.shape[0], self.batchsize), :]
         try:
