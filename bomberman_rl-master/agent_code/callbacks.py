@@ -3,6 +3,8 @@ from collections import deque
 import numpy as np
 
 
+## ATTENTION: This code belongs to the regression forest and was only meant to be used for the competition.
+
 def setup(self):
     self.ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
     with open("my-saved-model.pt", "rb") as file:
