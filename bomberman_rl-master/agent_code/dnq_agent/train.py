@@ -12,6 +12,7 @@ import events as e
 import settings
 from . import callbacks
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 import torch as T
 
@@ -46,8 +47,8 @@ def setup_training(self):
     # Example: Setup an array that will note transition tuples
     # (s, a, r, s')
 
-    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 10), dtype=np.float32)
-    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 10), dtype=np.float32)
+    self.states = np.zeros((TRANSITION_HISTORY_SIZE, 5, 17, 17))
+    self.nextstates = np.zeros((TRANSITION_HISTORY_SIZE, 5, 17, 17))
 
     self.actions = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
     self.rewards = np.zeros(TRANSITION_HISTORY_SIZE, dtype=np.int32)
@@ -58,9 +59,10 @@ def setup_training(self):
     self.gamma = callbacks.gamma
     self.batch_size = batch_size
     self.mem_size = TRANSITION_HISTORY_SIZE
+    self.rewardlist = []
 
     #self.scheduler = T.optim.lr_scheduler.MultiplicativeLR(self.model.optimizer, lambda x: 0.99995, verbose=True)
-
+    self.tensorboardwriter = SummaryWriter()
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     #remember
@@ -96,12 +98,12 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         pass
 
     else:
-        self.states[idx] = callbacks.state_to_features(old_game_state)
+        oldstate = callbacks.state_to_features(old_game_state)
+        self.states[idx] = oldstate
         newstate = callbacks.state_to_features(new_game_state)
-        if newstate[0] == 4:
-            events.append("IN_DANGER")
         self.nextstates[idx] = newstate
         self.rewards[idx] = reward_from_events(self, events)
+        self.rewardlist.append(self.rewards[idx])
         try:
             self.actions[idx] = callbacks.ACTIONS.index(self_action)
         except ValueError:
@@ -125,15 +127,33 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     #self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
+
+    ##log lenght of rounds
+    self.tensorboardwriter.add_scalar("Roundlength in Steps", last_game_state["step"], self.ITERATION_COUNTER)
+
+
     if self.MEMORY_ITERATOR % 1000 == 0:
         self.nextmodel.load_state_dict(self.evalmodel.state_dict())
+
+        self.tensorboardwriter.add_histogram("conv1.bias", self.nextmodel.conv1.bias, self.ITERATION_COUNTER)
+        self.tensorboardwriter.add_histogram("conv1.weight", self.nextmodel.conv1.weight, self.ITERATION_COUNTER)
+
+        self.tensorboardwriter.add_histogram("conv2.bias", self.nextmodel.conv2.bias, self.ITERATION_COUNTER)
+        self.tensorboardwriter.add_histogram("conv2.weight", self.nextmodel.conv2.weight, self.ITERATION_COUNTER)
+
+        self.tensorboardwriter.add_histogram("fc1.weight", self.nextmodel.fc1.weight, self.ITERATION_COUNTER)
+        self.tensorboardwriter.add_histogram("fc2.weight", self.nextmodel.fc2.weight, self.ITERATION_COUNTER)
+        self.tensorboardwriter.add_histogram("fc3.weight", self.nextmodel.fc3.weight, self.ITERATION_COUNTER)
+
+
     idx = (self.MEMORY_ITERATOR % TRANSITION_HISTORY_SIZE) - 1
     last_state = callbacks.state_to_features(last_game_state)
     self.states[idx] = last_state
-    if last_state[0] == 4:
-        events.append("IN_DANGER")
     self.nextstates[idx] = callbacks.state_to_features(None)
     self.rewards[idx] = reward_from_events(self, events)
+    self.rewardlist.append(self.rewards[idx])
+    self.tensorboardwriter.add_scalar("Episode total reward", sum(self.rewardlist), self.ITERATION_COUNTER)
+    self.rewardlist = []
     try:
         self.actions[idx] = callbacks.ACTIONS.index(last_action)
     except ValueError:
@@ -146,7 +166,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     else:
         self.evalmodel.optimizer.zero_grad()
-        self.evalmodel.train(mode=True)                                     #For Batch normalization and pooling layers
+        self.evalmodel.train(mode=True)                                      #For Batch normalization and pooling layers
         max_mem = min(self.MEMORY_ITERATOR, self.mem_size)
 
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
@@ -166,7 +186,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         next[terminal_batch.long()] = 0.0
         target = reward_batch + self.gamma * T.max(next, dim=1)[0]
 
-        print("Reward: ", T.sum(reward_batch), end="")
+
 
         loss = self.evalmodel.loss(target, pred).to(self.evalmodel.device)
         loss.backward()
@@ -175,8 +195,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         ##To have some information about problems concering the gradients
         T.autograd.set_detect_anomaly(True)
 
+        self.tensorboardwriter.add_scalar("Epsilon", callbacks.epsilon, self.ITERATION_COUNTER)
         self.ITERATION_COUNTER += 1
-        print("epsilon: ", callbacks.epsilon)
         callbacks.epsilon = callbacks.epsilon * callbacks.epsilon_decay if callbacks.epsilon > callbacks.epsilon_min \
             else callbacks.epsilon_min
 
@@ -201,9 +221,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.MOVED_RIGHT: -1,
         e.CRATE_DESTROYED: 10,
         e.COIN_COLLECTED: 15,
-        e.KILLED_OPPONENT: 50,
+        e.KILLED_OPPONENT: 30,
         e.GOT_KILLED: -10,
-        e.KILLED_SELF: -50,
+        e.KILLED_SELF: -30,
         e.WAITED: -5,
         e.INVALID_ACTION: -2,
         e.BOMB_DROPPED: -1,
